@@ -14,4 +14,4 @@ COPY src ./src
 
 USER appuser
 
-ENTRYPOINT ["python", "src/main.py"]
+ENTRYPOINT ["python", "src/entrypoint.py"]

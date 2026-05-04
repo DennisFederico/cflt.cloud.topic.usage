@@ -52,6 +52,7 @@ Optional:
 |---|---|---|
 | `--cluster-id` | Kafka cluster ID (e.g. `lkc-abc123`) | `CLUSTER_ID` env var |
 | `--interval` | Metrics query interval (see format below) | `now-7d\|d/now-5m` (last 7 days) |
+| `--output-path` | Directory path to also write JSON output file | not set |
 | `--include-internal-topics` | Include internal Kafka topics in output | `false` |
 
 ### Interval Format
@@ -72,6 +73,18 @@ Examples:
 
 > **Note:** The Confluent Metrics API retains data for [7 days](https://docs.confluent.io/cloud/current/monitoring/monitor-faq.html#what-is-the-retention-time-of-metrics-in-the-metrics-api). Intervals beyond 7 days will return incomplete results.
 
+### Output File Naming
+
+When `--output-path` is provided, the tool still prints JSON to stdout and also writes a file using this pattern:
+
+`topic-usage_<cluster-id>_<start-date>_<end-date>.json`
+
+Where:
+
+- `<cluster-id>` comes from `--cluster-id` or `CLUSTER_ID`
+- `<start-date>` and `<end-date>` are computed from `--interval` against current execution time
+- Dates are UTC timestamps in `YYYYMMDDTHHMMSSZ` format
+
 ## Build
 
 ```bash
@@ -79,6 +92,9 @@ docker build -t cflt-topic-usage:latest .
 ```
 
 ## Run
+
+KAFKA_API_ENDPOINT format is usually `https://pkc-xxxxx.region.provider.confluent.cloud`
+CATALOG_API_ENPOINT format is usually `https://psrc-xxxxx.region.provider.confluent.cloud`
 
 ```bash
 docker run --rm \
@@ -94,9 +110,23 @@ docker run --rm \
   cflt-topic-usage:latest
 ```
 
-KAFKA_API_ENDPOINT format is usually `https://pkc-xxxxx.region.provider.confluent.cloud`
-CATALOG_API_ENPOINT format is usually `https://psrc-xxxxx.region.provider.confluent.cloud`
+Example with shared volume output:
 
+```bash
+docker run --rm \
+  -v "$(pwd)/.out:/data/out" \
+  -e CLUSTER_ID="$KAFKA_CLUSTER_ID" \
+  -e METRICS_API_KEY="$CLOUD_API_KEY" \
+  -e METRICS_API_SECRET="$CLOUD_API_SECRET" \
+  -e KAFKA_API_ENDPOINT="$KAFKA_REST" \
+  -e KAFKA_API_KEY="$KAFKA_API_KEY" \
+  -e KAFKA_API_SECRET="$KAFKA_API_SECRET" \
+  -e CATALOG_API_ENDPOINT="$CATALOG_ENDPOINT" \
+  -e CATALOG_API_KEY="$CATALOG_API_KEY" \
+  -e CATALOG_API_SECRET="$CATALOG_API_SECRET" \
+  cflt-topic-usage:latest \
+  --output-path /data/out
+```
 
 Example running for the last day
 
@@ -119,6 +149,92 @@ docker run --rm \
 ```bash
 python -m pytest -q
 ```
+
+## Zero-Bytes Aggregation Tool
+
+The same Docker image includes an additional CLI tool that:
+
+- reads previous report files from a directory (for example, a mounted Docker volume)
+- aggregates `bytes_in` and `bytes_out` by topic across all reports for the same cluster
+- queries the Kafka cluster for currently existing topics
+- prints to stdout a JSON document with two arrays:
+  - `zero_topics` — existing topics where aggregated `bytes_in` and/or `bytes_out` is `0`, each entry contains `topic`, `zero_bytes_in` (bool), and `zero_bytes_out` (bool)
+  - `non_zero_topics` — existing topics where **both** `bytes_in > 0` and `bytes_out > 0`, as a flat sorted list of topic name strings
+
+Report interval overlaps or gaps are intentionally ignored for this check.
+
+### Run with Docker Volume
+
+```bash
+docker run --rm \
+  -v "$(pwd)/.out:/data/reports" \
+  -e CLUSTER_ID="$KAFKA_CLUSTER_ID" \
+  -e KAFKA_API_ENDPOINT="$KAFKA_REST" \
+  -e KAFKA_API_KEY="$KAFKA_API_KEY" \
+  -e KAFKA_API_SECRET="$KAFKA_API_SECRET" \
+  cflt-topic-usage:latest \
+  find-zero-topics \
+  --reports-path /data/reports
+```
+
+Optional flags:
+
+- `--cluster-id`
+- `--kafka-api-endpoint`
+- `--kafka-api-key`
+- `--kafka-api-secret`
+- `--include-internal-topics`
+- `--request-timeout-seconds`
+- `--max-retries`
+
+## Change Topic Owner Tool
+
+The Docker image also includes a third tool to update Kafka topic metadata in Confluent Catalog:
+
+- validates that the topic exists in the target cluster
+- updates the topic's `owner` and `ownerEmail` attributes via Catalog API PUT request
+- outputs a JSON confirmation with the updated values
+
+### Run with Docker
+
+```bash
+docker run --rm \
+  -e CLUSTER_ID="$KAFKA_CLUSTER_ID" \
+  -e METRICS_API_KEY="$METRICS_API_KEY" \
+  -e METRICS_API_SECRET="$METRICS_API_SECRET" \
+  -e KAFKA_API_ENDPOINT="$KAFKA_REST" \
+  -e KAFKA_API_KEY="$KAFKA_API_KEY" \
+  -e KAFKA_API_SECRET="$KAFKA_API_SECRET" \
+  -e CATALOG_API_ENDPOINT="$CATALOG_ENDPOINT" \
+  -e CATALOG_API_KEY="$CATALOG_API_KEY" \
+  -e CATALOG_API_SECRET="$CATALOG_API_SECRET" \
+  cflt-topic-usage:latest \
+  update-topic-owner \
+  --topic <topic-name> \
+  --owner "Full Name" \
+  --owner-email "email@company.com"
+```
+
+IMPORTANT NOTE:
+Currently, all tools in this image share the same configuration loader. Because of that, the `update-topic-owner` tool still requires all core environment variables to be present, including `METRICS_API_KEY` and `METRICS_API_SECRET`, even though it does not call the Metrics API directly.
+
+Required flags:
+
+- `--topic` — Topic name to update
+- `--owner` — New owner name
+- `--owner-email` — New owner email address
+
+Optional flags:
+
+- `--cluster-id`
+- `--catalog-api-endpoint`
+- `--catalog-api-key`
+- `--catalog-api-secret`
+- `--kafka-api-endpoint`
+- `--kafka-api-key`
+- `--kafka-api-secret`
+- `--request-timeout-seconds`
+- `--max-retries`
 
 ## Documentation References
 

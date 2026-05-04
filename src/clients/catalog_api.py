@@ -5,7 +5,7 @@ from http_client import HttpClient
 
 
 UNKNOWN_OWNER = "unknown"
-UNKNOWN_OWNER_EMAIL = "unknown"
+UNKNOWN_OWNER_EMAIL = ""
 
 
 class CatalogApiClient:
@@ -33,6 +33,24 @@ class CatalogApiClient:
             owners[topic_name] = owner
             owner_emails[topic_name] = owner_email
         return owners, owner_emails
+
+    def update_topic_owner(self, cluster_id: str, topic_name: str, owner: str, owner_email: str) -> None:
+        qualified_name = f"{cluster_id}:{topic_name}"
+        payload = {
+            "entity": {
+                "typeName": "kafka_topic",
+                "attributes": {
+                    "qualifiedName": qualified_name,
+                    "owner": owner,
+                    "ownerEmail": owner_email,
+                },
+            }
+        }
+        self.http.request_json(
+            method="PUT",
+            path_or_url="/catalog/v1/entity",
+            json_body=payload,
+        )
 
     def _extract_owner_info(self, payload: Any) -> tuple[str | None, str | None]:
         attrs = self._get_path(payload, ("entity", "attributes"))

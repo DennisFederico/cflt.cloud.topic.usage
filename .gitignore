@@ -1,6 +1,7 @@
 .local
 .vars
 .env
+.out
 .pytest_cache
 **/__pycache__/
 **/*.pyc

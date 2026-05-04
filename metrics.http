@@ -109,8 +109,8 @@ Content-Type: application/json
 @catalog_api_secret = {{$dotenv CATALOG_API_SECRET}}
 
 ### TOPIC METADATA - jq '.entity.attributes | {name, qualifiedName, owner, ownerEmail}'
-
-GET {{catalog_endpoint}}/catalog/v1/entity/type/kafka_topic/name/{{kafka_cluster_id}}:abc
+@topic_name = topic_0
+GET {{catalog_endpoint}}/catalog/v1/entity/type/kafka_topic/name/{{kafka_cluster_id}}:{{topic_name}}
 Authorization: Basic {{catalog_api_key}}:{{catalog_api_secret}}
 Content-Type: application/json
 
@@ -123,7 +123,7 @@ Content-Type: application/json
   "entity": {
     "typeName": "kafka_topic",
     "attributes": {
-      "qualifiedName": "{{kafka_cluster_id}}:abc",
+      "qualifiedName": "{{kafka_cluster_id}}:{{topic_name}}",
       "owner": "Dennis Federico",
       "ownerEmail": "dfederico@company.com"
     }
