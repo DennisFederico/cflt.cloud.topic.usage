@@ -8,8 +8,8 @@ For each topic in a given cluster:
 
 - `query_interval` (metrics query range used for bytes calculation)
 - `topic`
-- `bytes_in_7d`
-- `bytes_out_7d`
+- `bytes_in`
+- `bytes_out`
 - `partitions`
 - `owner` (from Catalog API when available, otherwise `unknown`)
 - `owner_email` (from Catalog API when available, otherwise `""`)
@@ -46,6 +46,32 @@ Optional:
 
 > **Note:** `owner` and `owner_email` are resolved via the Catalog API using `CATALOG_API_ENDPOINT`, `CATALOG_API_KEY`, and `CATALOG_API_SECRET`. The Catalog API uses different credentials from the Kafka and Metrics API, set all three explicitly.
 
+## CLI Arguments
+
+| Argument | Description | Default |
+|---|---|---|
+| `--cluster-id` | Kafka cluster ID (e.g. `lkc-abc123`) | `CLUSTER_ID` env var |
+| `--interval` | Metrics query interval (see format below) | `now-7d\|d/now-5m\|m` (last 7 days) |
+| `--include-internal-topics` | Include internal Kafka topics in output | `false` |
+
+### Interval Format
+
+The `--interval` argument uses the [Confluent Metrics API interval format](https://docs.confluent.io/cloud/current/monitoring/metrics-api.html):
+
+```
+now-<duration>|<granularity>/now-<offset>|<granularity>
+```
+
+Examples:
+
+| Interval | Meaning |
+|---|---|
+| `now-7d\|d/now-5m\|m` | Last 7 days (default) |
+| `now-1d\|d/now-5m\|m` | Last 24 hours |
+| `now-3d\|d/now-5m\|m` | Last 3 days |
+
+> **Note:** The Confluent Metrics API retains data for [7 days](https://docs.confluent.io/cloud/current/monitoring/monitor-faq.html#what-is-the-retention-time-of-metrics-in-the-metrics-api). Intervals beyond 7 days will return incomplete results.
+
 ## Build
 
 ```bash
@@ -65,7 +91,7 @@ docker run --rm \
   -e CATALOG_API_ENDPOINT="$CATALOG_ENDPOINT" \
   -e CATALOG_API_KEY="$CATALOG_API_KEY" \
   -e CATALOG_API_SECRET="$CATALOG_API_SECRET" \
-  cflt-topic-usage:latest
+  cflt-topic-usage:latest [--interval now-1d|d/now-5m|m]
 ```
 
 KAFKA_API_ENDPOINT format is usually `https://pkc-xxxxx.region.provider.confluent.cloud`

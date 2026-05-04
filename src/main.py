@@ -12,13 +12,21 @@ from transform.topic_usage import build_topic_usage
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Fetch Confluent Cloud topic usage (7d bytes in/out, partitions, owner) as JSON."
+        description="Fetch Confluent Cloud topic usage (bytes in/out, partitions, owner) as JSON."
     )
     parser.add_argument("--cluster-id", help="Confluent Kafka cluster ID (e.g., lkc-abc123)")
     parser.add_argument(
         "--include-internal-topics",
         action="store_true",
         help="Include internal topics (default: false)",
+    )
+    parser.add_argument(
+        "--interval",
+        default=QUERY_INTERVAL_LAST_7_DAYS,
+        help=(
+            "Metrics query interval in Confluent interval format "
+            "(e.g. 'now-7d|d/now-5m|m'). Default: last 7 days."
+        ),
     )
     return parser.parse_args()
 
@@ -64,7 +72,7 @@ def run() -> int:
         include_internal_topics=config.include_internal_topics,
     )
 
-    query_interval = QUERY_INTERVAL_LAST_7_DAYS
+    query_interval = args.interval
     bytes_in, bytes_out = metrics_client.get_topic_bytes(
         cluster_id=config.cluster_id,
         interval=query_interval,

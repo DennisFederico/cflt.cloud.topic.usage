@@ -14,8 +14,8 @@ def build_topic_usage(
     for topic_name in sorted(topic_partitions.keys()):
         entry = {
             "topic": topic_name,
-            "bytes_in_7d": _normalize_number(bytes_in.get(topic_name, 0.0)),
-            "bytes_out_7d": _normalize_number(bytes_out.get(topic_name, 0.0)),
+            "bytes_in": _normalize_number(bytes_in.get(topic_name, 0.0)),
+            "bytes_out": _normalize_number(bytes_out.get(topic_name, 0.0)),
             "partitions": int(topic_partitions.get(topic_name, 0)),
             "owner": owners.get(topic_name, "unknown") or "unknown",
             "owner_email": (owner_emails or {}).get(topic_name, ""),

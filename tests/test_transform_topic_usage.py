@@ -17,15 +17,15 @@ def test_build_topic_usage_defaults_and_sorting():
     assert [item["topic"] for item in output["topics"]] == ["a", "b"]
 
     topic_a = output["topics"][0]
-    assert topic_a["bytes_in_7d"] == 10
-    assert topic_a["bytes_out_7d"] == 0
+    assert topic_a["bytes_in"] == 10
+    assert topic_a["bytes_out"] == 0
     assert topic_a["partitions"] == 3
     assert topic_a["owner"] == "team-a"
     assert topic_a["owner_email"] == "team-a@company.com"
 
     topic_b = output["topics"][1]
-    assert topic_b["bytes_in_7d"] == 0
-    assert topic_b["bytes_out_7d"] == 5.5
+    assert topic_b["bytes_in"] == 0
+    assert topic_b["bytes_out"] == 5.5
     assert topic_b["partitions"] == 2
     assert topic_b["owner"] == "unknown"
     assert topic_b["owner_email"] == ""
