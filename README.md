@@ -91,7 +91,7 @@ docker run --rm \
   -e CATALOG_API_ENDPOINT="$CATALOG_ENDPOINT" \
   -e CATALOG_API_KEY="$CATALOG_API_KEY" \
   -e CATALOG_API_SECRET="$CATALOG_API_SECRET" \
-  cflt-topic-usage:latest [--interval now-1d|d/now-5m|m]
+  cflt-topic-usage:latest --interval "now-1d|d/now-5m|m"
 ```
 
 KAFKA_API_ENDPOINT format is usually `https://pkc-xxxxx.region.provider.confluent.cloud`
@@ -117,9 +117,3 @@ python -m pytest -q
 - Rate Limit: There are haders that explain rate limit when 429 code is received
   - Note that headers are not returned for a 429 error response with Kafka REST API (v3)
 - Retention time of metrics in the Metrics API is [7 days](https://docs.confluent.io/cloud/current/monitoring/monitor-faq.html#what-is-the-retention-time-of-metrics-in-the-metrics-api)
-
-## TODOs
-
-[] Topic ID ... what happens with metrics when topic is deleted and recreated with the same name during?
-[] Paginataion ... some endpoint have a default of 100 results, max 500 via request parameter, need to paginate if greater than that
-[] Request Rate ... do we need to throttle the requests?
