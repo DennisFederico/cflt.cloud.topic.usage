@@ -4,7 +4,7 @@ import sys
 
 from clients.catalog_api import CatalogApiClient
 from clients.kafka_v3_api import KafkaV3Client
-from clients.metrics_api import MetricsApiClient
+from clients.metrics_api import MetricsApiClient, QUERY_INTERVAL_LAST_7_DAYS
 from config import ConfigError, from_env
 from http_client import ApiError, HttpClient
 from transform.topic_usage import build_topic_usage
@@ -12,7 +12,7 @@ from transform.topic_usage import build_topic_usage
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Fetch Confluent Cloud topic usage (30d bytes in/out, partitions, owner) as JSON."
+        description="Fetch Confluent Cloud topic usage (7d bytes in/out, partitions, owner) as JSON."
     )
     parser.add_argument("--cluster-id", help="Confluent Kafka cluster ID (e.g., lkc-abc123)")
     parser.add_argument(
@@ -64,11 +64,16 @@ def run() -> int:
         include_internal_topics=config.include_internal_topics,
     )
 
-    bytes_in, bytes_out = metrics_client.get_topic_bytes_for_last_30_days(cluster_id=config.cluster_id)
+    query_interval = QUERY_INTERVAL_LAST_7_DAYS
+    bytes_in, bytes_out = metrics_client.get_topic_bytes(
+        cluster_id=config.cluster_id,
+        interval=query_interval,
+    )
     owners, owner_emails = catalog_client.get_topic_owners(config.cluster_id, list(topic_partitions.keys()))
 
     output = build_topic_usage(
         cluster_id=config.cluster_id,
+        query_interval=query_interval,
         topic_partitions=topic_partitions,
         bytes_in=bytes_in,
         bytes_out=bytes_out,

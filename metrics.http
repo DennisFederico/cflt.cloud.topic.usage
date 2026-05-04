@@ -65,9 +65,23 @@ GET {{catalog_endpoint}}/catalog/v1/entity/type/kafka_topic/name/{{kafka_cluster
 Authorization: Basic {{catalog_api_key}}:{{catalog_api_secret}}
 Content-Type: application/json
 
+### PUT to change the topic Owner and EmailAddress
+PUT {{catalog_endpoint}}/catalog/v1/entity
+Authorization: Basic {{catalog_api_key}}:{{catalog_api_secret}}
+Content-Type: application/json
 
+{
+  "entity": {
+    "typeName": "kafka_topic",
+    "attributes": {
+      "qualifiedName": "{{kafka_cluster_id}}:abc",
+      "owner": "Dennis Federico",
+      "ownerEmail": "dfederico@company.com"
+    }
+  }
+}
 
-### LIST TOPICS - METRICS API
+### LIST TOPICS - METRICS API - INTERVAL 1H, Granulary 1M, Group by topic
 POST {{metrics_endpoint}}/query
 Authorization: Basic {{metrics_api_key}}:{{metrics_api_secret}}
 Content-Type: application/json  
@@ -78,6 +92,20 @@ Content-Type: application/json
   "granularity": "PT1M",
   "group_by": ["metric.topic"],
   "intervals": ["now-1h/now"],
+  "limit": 1000
+}
+
+### Specific topic - METRICS API - INTERVAL 30D, Granulary 1D, Group by topic
+POST {{metrics_endpoint}}/query
+Authorization: Basic {{metrics_api_key}}:{{metrics_api_secret}}
+Content-Type: application/json  
+
+{
+  "aggregations": [{"metric": "io.confluent.kafka.server/received_bytes"}],
+  "filter": {"field": "resource.kafka.id", "op": "EQ", "value": "{{kafka_cluster_id}}"},
+  "granularity": "P1D",
+  "group_by": ["metric.topic"],
+  "intervals": ["now-30d/now-8d"],
   "limit": 1000
 }
 

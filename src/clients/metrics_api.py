@@ -4,16 +4,28 @@ from typing import Any
 from http_client import HttpClient
 
 
+QUERY_INTERVAL_LAST_7_DAYS = "now-7d|d/now-5m|m"
+
+
 class MetricsApiClient:
     def __init__(self, http_client: HttpClient):
         self.http = http_client
 
-    def get_topic_bytes_for_last_30_days(self, cluster_id: str) -> tuple[dict[str, float], dict[str, float]]:
-        bytes_in = self._query_metric(cluster_id, "io.confluent.kafka.server/received_bytes")
-        bytes_out = self._query_metric(cluster_id, "io.confluent.kafka.server/sent_bytes")
+    def get_topic_bytes(
+        self,
+        cluster_id: str,
+        interval: str = QUERY_INTERVAL_LAST_7_DAYS,
+    ) -> tuple[dict[str, float], dict[str, float]]:
+        bytes_in = self._query_metric(cluster_id, "io.confluent.kafka.server/received_bytes", interval)
+        bytes_out = self._query_metric(cluster_id, "io.confluent.kafka.server/sent_bytes", interval)
         return bytes_in, bytes_out
 
-    def _query_metric(self, cluster_id: str, metric_name: str) -> dict[str, float]:
+    def _query_metric(
+        self,
+        cluster_id: str,
+        metric_name: str,
+        interval: str = QUERY_INTERVAL_LAST_7_DAYS,
+    ) -> dict[str, float]:
         results: dict[str, float] = defaultdict(float)
         page_token: str | None = None
 
@@ -28,7 +40,7 @@ class MetricsApiClient:
                     "value": cluster_id,
                 },
                 "granularity": "ALL",
-                "intervals": ["now-30d|d/now-5m|m"],
+                "intervals": [interval],
                 "format": "GROUPED",
                 "limit": 1000,
             }
