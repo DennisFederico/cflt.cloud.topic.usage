@@ -4,14 +4,15 @@
 [METRICS DATASETS](https://api.telemetry.confluent.cloud/docs/descriptors/datasets/cloud)
 https://api.telemetry.confluent.cloud/docs
 
-### CONFIGURATION
-@kafka_cluster_id = lkc-00k589
-@kafka_rest = https://pkc-ldvj1.ap-southeast-2.aws.confluent.cloud
+#################################
+### KAFKA V3 API
+#################################
+### CONFIGURATION / VARIABLES (.env)
 
-@cloud_api_key = 7O44MT3XMG4QIJNN
-@cloud_api_secret = cfltRo2HQQncRkzLCOj+huwjWhENSUMJ6hEMswkA/Xh1M51eTyoDvKzGbH9LV2KQ
-@kafka_api_key = EQP25L4QMMNED4UE
-@kafka_api_secret = cflt1Sj8vHJASVv/PI2Ap03/FAlgZpSm0fIaa3nEjdVVNBvf5yU3Tpd8TWMV2neQ
+@kafka_rest = {{$dotenv KAFKA_REST}}
+@kafka_cluster_id = {{$dotenv KAFKA_CLUSTER_ID}}
+@kafka_api_key = {{$dotenv KAFKA_API_KEY}}
+@kafka_api_secret = {{$dotenv KAFKA_API_SECRET}}
 
 ### LIST TOPICS - REST API
 # @name topics_list
@@ -28,17 +29,23 @@ GET {{kafka_rest}}/kafka/v3/clusters/{{kafka_cluster_id}}/consumer-groups
 Authorization: Basic {{kafka_api_key}}:{{kafka_api_secret}}
 
 ###
-
 @group_id = {{consumer_groups.response.body.$.data[*].consumer_group_id}}
 
 ### CONSUMERS2 - REST API
 GET {{kafka_rest}}/kafka/v3/clusters/{{kafka_cluster_id}}/consumer-groups/{{group_id}}/consumers
 Authorization: Basic {{kafka_api_key}}:{{kafka_api_secret}}
 
-### CONFIGURATION
-@metrics_endpoint = https://api.telemetry.confluent.cloud/v2/metrics/cloud
-@metrics_api_key = {{cloud_api_key}}
-@metrics_api_secret = {{cloud_api_secret}}
+
+
+
+#################################
+### METRICS API - Confluent Cloud
+#################################
+### CONFIGURATION / VARIABLES (.env)
+
+@metrics_endpoint = {{$dotenv METRICS_API_ENDPOINT}}
+@metrics_api_key = {{$dotenv CLOUD_API_KEY}}
+@metrics_api_secret = {{$dotenv CLOUD_API_SECRET}}
 
 ### METRICS AVAILABLE RESOURCES
 GET {{metrics_endpoint}}/descriptors/resources
@@ -50,36 +57,6 @@ GET {{metrics_endpoint}}/descriptors/metrics?resource_type=kafka
 Authorization: Basic {{metrics_api_key}}:{{metrics_api_secret}}
 Content-Type: application/json
 
-
-
-###
-### CATALOG (Schema Registry)
-###
-@catalog_endpoint = https://psrc-epkz2.ap-southeast-2.aws.confluent.cloud
-@catalog_api_key = IGBWBMVINYJ2UTWS
-@catalog_api_secret = cfltMtv1E4BmUNAYcbwDvFTsHslW/76OvXBiGyfqHrFDOZ+Ynf1S6oCRswy9St+g
-
-### TOPIC METADATA - jq '.entity.attributes | {name, qualifiedName, owner, ownerEmail}'
-
-GET {{catalog_endpoint}}/catalog/v1/entity/type/kafka_topic/name/{{kafka_cluster_id}}:abc
-Authorization: Basic {{catalog_api_key}}:{{catalog_api_secret}}
-Content-Type: application/json
-
-### PUT to change the topic Owner and EmailAddress
-PUT {{catalog_endpoint}}/catalog/v1/entity
-Authorization: Basic {{catalog_api_key}}:{{catalog_api_secret}}
-Content-Type: application/json
-
-{
-  "entity": {
-    "typeName": "kafka_topic",
-    "attributes": {
-      "qualifiedName": "{{kafka_cluster_id}}:abc",
-      "owner": "Dennis Federico",
-      "ownerEmail": "dfederico@company.com"
-    }
-  }
-}
 
 ### LIST TOPICS - METRICS API - INTERVAL 1H, Granulary 1M, Group by topic
 POST {{metrics_endpoint}}/query
@@ -119,9 +96,42 @@ GET {{metrics_endpoint}}/export?resource.kafka.id={{kafka_cluster_id}}
 Authorization: Basic {{metrics_api_key}}:{{metrics_api_secret}}
 Content-Type: application/json  
 
-### REGISTRY API
 
 
+
+#################################
+### CATALOG API - Schema Registry
+#################################
+### CONFIGURATION / VARIABLES (.env)
+
+@catalog_endpoint = {{$dotenv CATALOG_ENDPOINT}}
+@catalog_api_key = {{$dotenv CATALOG_API_KEY}}
+@catalog_api_secret = {{$dotenv CATALOG_API_SECRET}}
+
+### TOPIC METADATA - jq '.entity.attributes | {name, qualifiedName, owner, ownerEmail}'
+
+GET {{catalog_endpoint}}/catalog/v1/entity/type/kafka_topic/name/{{kafka_cluster_id}}:abc
+Authorization: Basic {{catalog_api_key}}:{{catalog_api_secret}}
+Content-Type: application/json
+
+### PUT to change the topic Owner and EmailAddress
+PUT {{catalog_endpoint}}/catalog/v1/entity
+Authorization: Basic {{catalog_api_key}}:{{catalog_api_secret}}
+Content-Type: application/json
+
+{
+  "entity": {
+    "typeName": "kafka_topic",
+    "attributes": {
+      "qualifiedName": "{{kafka_cluster_id}}:abc",
+      "owner": "Dennis Federico",
+      "ownerEmail": "dfederico@company.com"
+    }
+  }
+}
+
+
+### USAGE BY PRINCIPAL - METRICS API - INTERVAL 7D, Granulary 1M, Group by principal_id
 
   ### PRODUCERS
 
@@ -151,27 +161,3 @@ Content-Type: application/json
     "intervals": ["now-5m/now"],
     "limit": 1000
   }' | jq -r '.data[].metric.principal_id' | sort -u
-
-
-  ###
-#     "metrics_api_curl_example": {
-#     "sensitive": true,
-#     "type": "string",
-#     "value": "curl -X GET 'https://api.telemetry.confluent.cloud/v2/metrics/cloud/export?resource.kafka.id=lkc-vv2xg5\u0026resource.schema_registry.idlsrc-3g70dj' \\\n    -H 'Content-Type: application/json' \\\n    -u \"4CQPCBMOPEAIQQBK:JpDKK8TpA4lSa6GqETIDWamCkAZemmh3pl2GvZ0tHFHMnjNf6Xgm2lnqUAn8y1KS\"\n"
-#   },
-
-
-
-
-
-docker run --rm \
-  -e CLUSTER_ID="lkc-00k589" \
-  -e METRICS_API_KEY="7O44MT3XMG4QIJNN" \
-  -e METRICS_API_SECRET="cfltRo2HQQncRkzLCOj+huwjWhENSUMJ6hEMswkA/Xh1M51eTyoDvKzGbH9LV2KQ" \
-  -e KAFKA_API_ENDPOINT="https://pkc-ldvj1.ap-southeast-2.aws.confluent.cloud" \
-  -e KAFKA_API_KEY="EQP25L4QMMNED4UE" \
-  -e KAFKA_API_SECRET="cflt1Sj8vHJASVv/PI2Ap03/FAlgZpSm0fIaa3nEjdVVNBvf5yU3Tpd8TWMV2neQ" \
-  -e CATALOG_API_ENDPOINT="https://psrc-epkz2.ap-southeast-2.aws.confluent.cloud" \
-  -e CATALOG_API_KEY="IGBWBMVINYJ2UTWS" \
-  -e CATALOG_API_SECRET="cfltMtv1E4BmUNAYcbwDvFTsHslW/76OvXBiGyfqHrFDOZ+Ynf1S6oCRswy9St+g" \
-  cflt-topic-usage:latest

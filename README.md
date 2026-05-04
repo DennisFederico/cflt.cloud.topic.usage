@@ -56,17 +56,20 @@ docker build -t cflt-topic-usage:latest .
 
 ```bash
 docker run --rm \
-  -e CLUSTER_ID="lkc-123" \
-  -e METRICS_API_KEY="<cloud_api_key>" \
-  -e METRICS_API_SECRET="<cloud_api_secret>" \
-  -e KAFKA_API_ENDPOINT="https://pkc-xxxxx.region.provider.confluent.cloud" \
-  -e KAFKA_API_KEY="<kafka_api_key>" \
-  -e KAFKA_API_SECRET="<kafka_api_secret>" \
-  -e CATALOG_API_ENDPOINT="https://psrc-xxxxx.region.provider.confluent.cloud" \
-  -e CATALOG_API_KEY="<catalog_api_key>" \
-  -e CATALOG_API_SECRET="<catalog_api_secret>" \
+  -e CLUSTER_ID="$KAFKA_CLUSTER_ID" \
+  -e METRICS_API_KEY="$CLOUD_API_KEY" \
+  -e METRICS_API_SECRET="$CLOUD_API_SECRET" \
+  -e KAFKA_API_ENDPOINT="$KAFKA_REST" \
+  -e KAFKA_API_KEY="$KAFKA_API_KEY" \
+  -e KAFKA_API_SECRET="$KAFKA_API_SECRET" \
+  -e CATALOG_API_ENDPOINT="$CATALOG_ENDPOINT" \
+  -e CATALOG_API_KEY="$CATALOG_API_KEY" \
+  -e CATALOG_API_SECRET="$CATALOG_API_SECRET" \
   cflt-topic-usage:latest
 ```
+
+KAFKA_API_ENDPOINT format is usually `https://pkc-xxxxx.region.provider.confluent.cloud`
+CATALOG_API_ENPOINT format is usually `https://psrc-xxxxx.region.provider.confluent.cloud`
 
 ## Local Test Run
 
