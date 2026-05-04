@@ -1,0 +1,34 @@
+from datetime import datetime, timezone
+
+
+def build_topic_usage(
+    cluster_id: str,
+    topic_partitions: dict[str, int],
+    bytes_in: dict[str, float],
+    bytes_out: dict[str, float],
+    owners: dict[str, str],
+) -> dict:
+    topics = []
+    for topic_name in sorted(topic_partitions.keys()):
+        topics.append(
+            {
+                "topic": topic_name,
+                "bytes_in_30d": _normalize_number(bytes_in.get(topic_name, 0.0)),
+                "bytes_out_30d": _normalize_number(bytes_out.get(topic_name, 0.0)),
+                "partitions": int(topic_partitions.get(topic_name, 0)),
+                "owner": owners.get(topic_name, "unknown") or "unknown",
+            }
+        )
+
+    return {
+        "cluster_id": cluster_id,
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "topics": topics,
+    }
+
+
+def _normalize_number(value: float | int) -> int | float:
+    numeric = float(value)
+    if numeric.is_integer():
+        return int(numeric)
+    return numeric

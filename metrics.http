@@ -1,0 +1,146 @@
+## DOCS
+[KAFKA REST](https://docs.confluent.io/cloud/current/kafka-rest/kafka-rest-cc.html)
+[CLOUD METRICS](https://docs.confluent.io/cloud/current/monitoring/metrics-api.html)
+[METRICS DATASETS](https://api.telemetry.confluent.cloud/docs/descriptors/datasets/cloud)
+https://api.telemetry.confluent.cloud/docs
+
+### CONFIGURATION
+@kafka_cluster_id = lkc-00k589
+@kafka_rest = https://pkc-ldvj1.ap-southeast-2.aws.confluent.cloud
+
+@cloud_api_key = 7O44MT3XMG4QIJNN
+@cloud_api_secret = cfltRo2HQQncRkzLCOj+huwjWhENSUMJ6hEMswkA/Xh1M51eTyoDvKzGbH9LV2KQ
+@kafka_api_key = EQP25L4QMMNED4UE
+@kafka_api_secret = cflt1Sj8vHJASVv/PI2Ap03/FAlgZpSm0fIaa3nEjdVVNBvf5yU3Tpd8TWMV2neQ
+
+### LIST TOPICS - REST API
+# @name topics_list
+GET {{kafka_rest}}/kafka/v3/clusters/{{kafka_cluster_id}}/topics
+Authorization: Basic {{kafka_api_key}}:{{kafka_api_secret}}
+
+###
+@commentId = {{topics_list.response.body.$.data[*].topic_name}}
+# '.data[].topic_name'
+
+### CONSUMERS - REST API
+# @name consumer_groups
+GET {{kafka_rest}}/kafka/v3/clusters/{{kafka_cluster_id}}/consumer-groups
+Authorization: Basic {{kafka_api_key}}:{{kafka_api_secret}}
+
+###
+
+@group_id = {{consumer_groups.response.body.$.data[*].consumer_group_id}}
+
+### CONSUMERS2 - REST API
+GET {{kafka_rest}}/kafka/v3/clusters/{{kafka_cluster_id}}/consumer-groups/{{group_id}}/consumers
+Authorization: Basic {{kafka_api_key}}:{{kafka_api_secret}}
+
+### CONFIGURATION
+@metrics_endpoint = https://api.telemetry.confluent.cloud/v2/metrics/cloud
+@metrics_api_key = {{cloud_api_key}}
+@metrics_api_secret = {{cloud_api_secret}}
+
+### METRICS AVAILABLE RESOURCES
+GET {{metrics_endpoint}}/descriptors/resources
+Authorization: Basic {{metrics_api_key}}:{{metrics_api_secret}}
+Content-Type: application/json  
+
+### AVAILABLE METRICS
+GET {{metrics_endpoint}}/descriptors/metrics?resource_type=kafka
+Authorization: Basic {{metrics_api_key}}:{{metrics_api_secret}}
+Content-Type: application/json
+
+
+
+###
+### CATALOG (Schema Registry)
+###
+@catalog_endpoint = https://psrc-epkz2.ap-southeast-2.aws.confluent.cloud
+@catalog_api_key = IGBWBMVINYJ2UTWS
+@catalog_api_secret = cfltMtv1E4BmUNAYcbwDvFTsHslW/76OvXBiGyfqHrFDOZ+Ynf1S6oCRswy9St+g
+
+### TOPIC METADATA - jq '.entity.attributes | {name, qualifiedName, owner, ownerEmail}'
+
+GET {{catalog_endpoint}}/catalog/v1/entity/type/kafka_topic/name/{{kafka_cluster_id}}:abc
+Authorization: Basic {{catalog_api_key}}:{{catalog_api_secret}}
+Content-Type: application/json
+
+
+
+### LIST TOPICS - METRICS API
+POST {{metrics_endpoint}}/query
+Authorization: Basic {{metrics_api_key}}:{{metrics_api_secret}}
+Content-Type: application/json  
+
+{
+  "aggregations": [{"metric": "io.confluent.kafka.server/received_bytes"}],
+  "filter": {"field": "resource.kafka.id", "op": "EQ", "value": "{{kafka_cluster_id}}"},
+  "granularity": "PT1M",
+  "group_by": ["metric.topic"],
+  "intervals": ["now-1h/now"],
+  "limit": 1000
+}
+
+### LIST TOPICS - DISCOVERY EXPORT
+GET {{metrics_endpoint}}/discovery
+Authorization: Basic {{metrics_api_key}}:{{metrics_api_secret}}
+Content-Type: application/json  
+
+### LIST TOPICS - EXPORT
+GET {{metrics_endpoint}}/export?resource.kafka.id={{kafka_cluster_id}}
+Authorization: Basic {{metrics_api_key}}:{{metrics_api_secret}}
+Content-Type: application/json  
+
+### REGISTRY API
+
+
+
+  ### PRODUCERS
+
+  curl --silent -X POST "https://api.telemetry.confluent.cloud/v2/metrics/cloud/query" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Basic <BASE64(cloud_api_key:cloud_api_secret)>" \
+  -d '{
+    "aggregations": [{"metric": "io.confluent.kafka.server/received_bytes"}],
+    "filter": {"field": "resource.kafka.id", "op": "EQ", "value": "lkc-XXXXX"},
+    "granularity": "PT1M",
+    "group_by": ["metric.principal_id"],
+    "intervals": ["now-5m/now"],
+    "limit": 1000
+  }' | jq -r '.data[].metric.principal_id' | sort -u
+
+
+  ### CONSUMERS
+
+  curl --silent -X POST "https://api.telemetry.confluent.cloud/v2/metrics/cloud/query" \
+  -H "Content-Type: "application/json" \
+  -H "Authorization: Basic <BASE64(cloud_api_key:cloud_api_secret)>" \
+  -d '{
+    "aggregations": [{"metric": "io.confluent.kafka.server/sent_bytes"}],
+    "filter": {"field": "resource.kafka.id", "op": "EQ", "value": "lkc-XXXXX"},
+    "granularity": "PT1M",
+    "group_by": ["metric.principal_id"],
+    "intervals": ["now-5m/now"],
+    "limit": 1000
+  }' | jq -r '.data[].metric.principal_id' | sort -u
+
+
+  ###
+#     "metrics_api_curl_example": {
+#     "sensitive": true,
+#     "type": "string",
+#     "value": "curl -X GET 'https://api.telemetry.confluent.cloud/v2/metrics/cloud/export?resource.kafka.id=lkc-vv2xg5\u0026resource.schema_registry.idlsrc-3g70dj' \\\n    -H 'Content-Type: application/json' \\\n    -u \"4CQPCBMOPEAIQQBK:JpDKK8TpA4lSa6GqETIDWamCkAZemmh3pl2GvZ0tHFHMnjNf6Xgm2lnqUAn8y1KS\"\n"
+#   },
+
+
+
+
+
+docker run --rm \
+  -e CLUSTER_ID="lkc-00k589" \
+  -e METRICS_API_KEY="7O44MT3XMG4QIJNN" \
+  -e METRICS_API_SECRET="cfltRo2HQQncRkzLCOj+huwjWhENSUMJ6hEMswkA/Xh1M51eTyoDvKzGbH9LV2KQ" \
+  -e KAFKA_API_ENDPOINT="https://pkc-ldvj1.ap-southeast-2.aws.confluent.cloud" \
+  -e KAFKA_API_KEY="EQP25L4QMMNED4UE" \
+  -e KAFKA_API_SECRET="cflt1Sj8vHJASVv/PI2Ap03/FAlgZpSm0fIaa3nEjdVVNBvf5yU3Tpd8TWMV2neQ" \
+  cflt-topic-usage:latest
