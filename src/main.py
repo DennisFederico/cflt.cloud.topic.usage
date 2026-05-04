@@ -25,7 +25,7 @@ def parse_args() -> argparse.Namespace:
         default=QUERY_INTERVAL_LAST_7_DAYS,
         help=(
             "Metrics query interval in Confluent interval format "
-            "(e.g. 'now-7d|d/now-5m|m'). Default: last 7 days."
+            "(e.g. 'now-7d|now-5m'). Default: last 7 days."
         ),
     )
     return parser.parse_args()

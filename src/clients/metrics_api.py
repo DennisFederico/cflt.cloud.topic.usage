@@ -4,7 +4,7 @@ from typing import Any
 from http_client import HttpClient
 
 
-QUERY_INTERVAL_LAST_7_DAYS = "now-7d|d/now-5m|m"
+QUERY_INTERVAL_LAST_7_DAYS = "now-7d/now-5m"
 
 
 class MetricsApiClient:

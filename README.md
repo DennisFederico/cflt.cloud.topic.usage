@@ -51,24 +51,24 @@ Optional:
 | Argument | Description | Default |
 |---|---|---|
 | `--cluster-id` | Kafka cluster ID (e.g. `lkc-abc123`) | `CLUSTER_ID` env var |
-| `--interval` | Metrics query interval (see format below) | `now-7d\|d/now-5m\|m` (last 7 days) |
+| `--interval` | Metrics query interval (see format below) | `now-7d\|d/now-5m` (last 7 days) |
 | `--include-internal-topics` | Include internal Kafka topics in output | `false` |
 
 ### Interval Format
 
 The `--interval` argument uses the [Confluent Metrics API interval format](https://docs.confluent.io/cloud/current/monitoring/metrics-api.html):
 
-```
-now-<duration>|<granularity>/now-<offset>|<granularity>
-```
+`Array of strings <ISO-8601 interval (<start>/<end> | <start>/<duration> | <duration>/<end>)> (Interval) non-empty [ items <ISO-8601 interval (<start>/<end> | <start>/<duration> | <duration>/<end>) > ]`
+
+Note that the code currently forces/uses granularity `ALL`
 
 Examples:
 
 | Interval | Meaning |
 |---|---|
-| `now-7d\|d/now-5m\|m` | Last 7 days (default) |
-| `now-1d\|d/now-5m\|m` | Last 24 hours |
-| `now-3d\|d/now-5m\|m` | Last 3 days |
+| `now-7d/now-5m` | Last 7 days (default) |
+| `now-1d/now-5m` | Last 24 hours |
+| `now-3d/now-5m` | Last 3 days |
 
 > **Note:** The Confluent Metrics API retains data for [7 days](https://docs.confluent.io/cloud/current/monitoring/monitor-faq.html#what-is-the-retention-time-of-metrics-in-the-metrics-api). Intervals beyond 7 days will return incomplete results.
 
@@ -91,11 +91,28 @@ docker run --rm \
   -e CATALOG_API_ENDPOINT="$CATALOG_ENDPOINT" \
   -e CATALOG_API_KEY="$CATALOG_API_KEY" \
   -e CATALOG_API_SECRET="$CATALOG_API_SECRET" \
-  cflt-topic-usage:latest --interval "now-1d|d/now-5m|m"
+  cflt-topic-usage:latest
 ```
 
 KAFKA_API_ENDPOINT format is usually `https://pkc-xxxxx.region.provider.confluent.cloud`
 CATALOG_API_ENPOINT format is usually `https://psrc-xxxxx.region.provider.confluent.cloud`
+
+
+Example running for the last day
+
+```bash
+docker run --rm \
+  -e CLUSTER_ID="$KAFKA_CLUSTER_ID" \
+  -e METRICS_API_KEY="$CLOUD_API_KEY" \
+  -e METRICS_API_SECRET="$CLOUD_API_SECRET" \
+  -e KAFKA_API_ENDPOINT="$KAFKA_REST" \
+  -e KAFKA_API_KEY="$KAFKA_API_KEY" \
+  -e KAFKA_API_SECRET="$KAFKA_API_SECRET" \
+  -e CATALOG_API_ENDPOINT="$CATALOG_ENDPOINT" \
+  -e CATALOG_API_KEY="$CATALOG_API_KEY" \
+  -e CATALOG_API_SECRET="$CATALOG_API_SECRET" \
+  cflt-topic-usage:latest --interval "now-15d/now-5m"
+```
 
 ## Local Test Run
 
