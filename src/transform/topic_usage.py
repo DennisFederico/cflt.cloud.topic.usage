@@ -7,18 +7,19 @@ def build_topic_usage(
     bytes_in: dict[str, float],
     bytes_out: dict[str, float],
     owners: dict[str, str],
+    owner_emails: dict[str, str] | None = None,
 ) -> dict:
     topics = []
     for topic_name in sorted(topic_partitions.keys()):
-        topics.append(
-            {
-                "topic": topic_name,
-                "bytes_in_30d": _normalize_number(bytes_in.get(topic_name, 0.0)),
-                "bytes_out_30d": _normalize_number(bytes_out.get(topic_name, 0.0)),
-                "partitions": int(topic_partitions.get(topic_name, 0)),
-                "owner": owners.get(topic_name, "unknown") or "unknown",
-            }
-        )
+        entry = {
+            "topic": topic_name,
+            "bytes_in_30d": _normalize_number(bytes_in.get(topic_name, 0.0)),
+            "bytes_out_30d": _normalize_number(bytes_out.get(topic_name, 0.0)),
+            "partitions": int(topic_partitions.get(topic_name, 0)),
+            "owner": owners.get(topic_name, "unknown") or "unknown",
+            "owner_email": (owner_emails or {}).get(topic_name, ""),
+        }
+        topics.append(entry)
 
     return {
         "cluster_id": cluster_id,

@@ -8,6 +8,7 @@ def test_build_topic_usage_defaults_and_sorting():
         bytes_in={"a": 10.0},
         bytes_out={"b": 5.5},
         owners={"a": "team-a"},
+        owner_emails={"a": "team-a@company.com"},
     )
 
     assert output["cluster_id"] == "lkc-123"
@@ -18,9 +19,11 @@ def test_build_topic_usage_defaults_and_sorting():
     assert topic_a["bytes_out_30d"] == 0
     assert topic_a["partitions"] == 3
     assert topic_a["owner"] == "team-a"
+    assert topic_a["owner_email"] == "team-a@company.com"
 
     topic_b = output["topics"][1]
     assert topic_b["bytes_in_30d"] == 0
     assert topic_b["bytes_out_30d"] == 5.5
     assert topic_b["partitions"] == 2
     assert topic_b["owner"] == "unknown"
+    assert topic_b["owner_email"] == ""

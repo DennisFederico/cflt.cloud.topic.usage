@@ -65,7 +65,7 @@ def run() -> int:
     )
 
     bytes_in, bytes_out = metrics_client.get_topic_bytes_for_last_30_days(cluster_id=config.cluster_id)
-    owners = catalog_client.get_topic_owners(config.cluster_id, list(topic_partitions.keys()))
+    owners, owner_emails = catalog_client.get_topic_owners(config.cluster_id, list(topic_partitions.keys()))
 
     output = build_topic_usage(
         cluster_id=config.cluster_id,
@@ -73,6 +73,7 @@ def run() -> int:
         bytes_in=bytes_in,
         bytes_out=bytes_out,
         owners=owners,
+        owner_emails=owner_emails,
     )
     print(json.dumps(output, indent=2, sort_keys=False))
     return 0

@@ -143,4 +143,7 @@ docker run --rm \
   -e KAFKA_API_ENDPOINT="https://pkc-ldvj1.ap-southeast-2.aws.confluent.cloud" \
   -e KAFKA_API_KEY="EQP25L4QMMNED4UE" \
   -e KAFKA_API_SECRET="cflt1Sj8vHJASVv/PI2Ap03/FAlgZpSm0fIaa3nEjdVVNBvf5yU3Tpd8TWMV2neQ" \
+  -e CATALOG_API_ENDPOINT="https://psrc-epkz2.ap-southeast-2.aws.confluent.cloud" \
+  -e CATALOG_API_KEY="IGBWBMVINYJ2UTWS" \
+  -e CATALOG_API_SECRET="cfltMtv1E4BmUNAYcbwDvFTsHslW/76OvXBiGyfqHrFDOZ+Ynf1S6oCRswy9St+g" \
   cflt-topic-usage:latest

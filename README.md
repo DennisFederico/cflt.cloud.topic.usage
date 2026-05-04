@@ -11,6 +11,7 @@ For each topic in a given cluster:
 - `bytes_out_30d`
 - `partitions`
 - `owner` (from Catalog API when available, otherwise `unknown`)
+- `owner_email` (from Catalog API when available, otherwise `""`)
 
 Internal topics are excluded by default.
 
@@ -35,12 +36,14 @@ Internal topics are excluded by default.
 Optional:
 
 - `METRICS_API_ENDPOINT` (default `https://api.telemetry.confluent.cloud`)
-- `CATALOG_API_ENDPOINT` (default `https://api.confluent.cloud`)
-- `CATALOG_API_KEY` (defaults to `METRICS_API_KEY`)
-- `CATALOG_API_SECRET` (defaults to `METRICS_API_SECRET`)
+- `CATALOG_API_ENDPOINT` — Schema Registry / Catalog endpoint for the environment that owns the cluster. Set this to the Schema Registry URL (e.g. `https://psrc-xxxxx.region.provider.confluent.cloud`). Defaults to `https://api.confluent.cloud`.
+- `CATALOG_API_KEY` — API key with access to the Catalog API. Defaults to `METRICS_API_KEY` if not set.
+- `CATALOG_API_SECRET` — API secret for `CATALOG_API_KEY`. Defaults to `METRICS_API_SECRET` if not set.
 - `INCLUDE_INTERNAL_TOPICS` (`true` or `false`, default `false`)
 - `REQUEST_TIMEOUT_SECONDS` (default `30`)
 - `MAX_RETRIES` (default `3`)
+
+> **Note:** `owner` and `owner_email` are resolved via the Catalog API using `CATALOG_API_ENDPOINT`, `CATALOG_API_KEY`, and `CATALOG_API_SECRET`. If the Catalog API uses different credentials from the Metrics API, set all three explicitly.
 
 ## Build
 
@@ -58,6 +61,9 @@ docker run --rm \
   -e KAFKA_API_ENDPOINT="https://pkc-xxxxx.region.provider.confluent.cloud" \
   -e KAFKA_API_KEY="<kafka_api_key>" \
   -e KAFKA_API_SECRET="<kafka_api_secret>" \
+  -e CATALOG_API_ENDPOINT="https://psrc-xxxxx.region.provider.confluent.cloud" \
+  -e CATALOG_API_KEY="<catalog_api_key>" \
+  -e CATALOG_API_SECRET="<catalog_api_secret>" \
   cflt-topic-usage:latest
 ```
 

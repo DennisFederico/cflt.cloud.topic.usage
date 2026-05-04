@@ -5,13 +5,14 @@ from http_client import HttpClient
 
 
 UNKNOWN_OWNER = "unknown"
+UNKNOWN_OWNER_EMAIL = "unknown"
 
 
 class CatalogApiClient:
     def __init__(self, http_client: HttpClient):
         self.http = http_client
 
-    def get_topic_owner(self, cluster_id: str, topic_name: str) -> str:
+    def get_topic_owner_info(self, cluster_id: str, topic_name: str) -> tuple[str, str]:
         qualified_name = quote(f"{cluster_id}:{topic_name}", safe="")
         response = self.http.request_json(
             method="GET",
@@ -19,20 +20,38 @@ class CatalogApiClient:
             allow_404=True,
         )
         if response is None:
-            return UNKNOWN_OWNER
+            return UNKNOWN_OWNER, UNKNOWN_OWNER_EMAIL
 
-        owner = self._extract_owner(response)
-        return owner or UNKNOWN_OWNER
+        owner, owner_email = self._extract_owner_info(response)
+        return owner or UNKNOWN_OWNER, owner_email or UNKNOWN_OWNER_EMAIL
 
-    def get_topic_owners(self, cluster_id: str, topic_names: list[str]) -> dict[str, str]:
+    def get_topic_owners(self, cluster_id: str, topic_names: list[str]) -> tuple[dict[str, str], dict[str, str]]:
         owners: dict[str, str] = {}
+        owner_emails: dict[str, str] = {}
         for topic_name in topic_names:
-            owners[topic_name] = self.get_topic_owner(cluster_id, topic_name)
-        return owners
+            owner, owner_email = self.get_topic_owner_info(cluster_id, topic_name)
+            owners[topic_name] = owner
+            owner_emails[topic_name] = owner_email
+        return owners, owner_emails
 
-    def _extract_owner(self, payload: Any) -> str | None:
+    def _extract_owner_info(self, payload: Any) -> tuple[str | None, str | None]:
+        attrs = self._get_path(payload, ("entity", "attributes"))
+        if isinstance(attrs, dict):
+            owner = self._stringify_owner(attrs.get("owner"))
+            owner_email = attrs.get("ownerEmail")
+            if isinstance(owner_email, str):
+                owner_email = owner_email.strip() or None
+            else:
+                owner_email = None
+            if owner:
+                return owner, owner_email
+
+        # Fallback: search for owner via legacy paths
+        owner = self._extract_owner_legacy(payload)
+        return owner, None
+
+    def _extract_owner_legacy(self, payload: Any) -> str | None:
         candidate_paths = [
-            ("entity", "attributes", "owner"),
             ("attributes", "owner"),
             ("entity", "owner"),
             ("owner",),

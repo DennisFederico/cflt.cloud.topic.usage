@@ -44,11 +44,16 @@ def test_metrics_client_grouped_and_pagination():
 def test_catalog_owner_extraction_and_fallback():
     response = {
         ("GET", "/catalog/v1/entity/type/kafka_topic/name/lkc-1%3Atopic-1", None): {
-            "entity": {"attributes": {"owner": "team-a"}}
+            "entity": {"attributes": {"owner": "team-a", "ownerEmail": "team-a@company.com"}}
         },
         ("GET", "/catalog/v1/entity/type/kafka_topic/name/lkc-1%3Atopic-2", None): None,
     }
     client = CatalogApiClient(DummyHttpClient(response))
 
-    assert client.get_topic_owner("lkc-1", "topic-1") == "team-a"
-    assert client.get_topic_owner("lkc-1", "topic-2") == "unknown"
+    owner, owner_email = client.get_topic_owner_info("lkc-1", "topic-1")
+    assert owner == "team-a"
+    assert owner_email == "team-a@company.com"
+
+    owner2, owner_email2 = client.get_topic_owner_info("lkc-1", "topic-2")
+    assert owner2 == "unknown"
+    assert owner_email2 == ""
