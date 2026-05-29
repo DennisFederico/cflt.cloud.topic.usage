@@ -72,6 +72,20 @@ Content-Type: application/json
   "limit": 1000
 }
 
+### LIST TOPICS - METRICS API - INTERVAL 1H, Granulary 1M, Group by topic
+POST {{metrics_endpoint}}/query
+Authorization: Basic {{metrics_api_key}}:{{metrics_api_secret}}
+Content-Type: application/json  
+
+{
+  "aggregations": [{"metric": "io.confluent.kafka.server/retained_bytes"}],
+  "filter": {"field": "resource.kafka.id", "op": "EQ", "value": "{{kafka_cluster_id}}"},
+  "granularity": "PT1M",
+  "group_by": ["metric.topic"],
+  "intervals": ["now-5m/now-4m"],
+  "limit": 1000
+}
+
 ### Specific topic - METRICS API - INTERVAL 30D, Granulary 1D, Group by topic
 POST {{metrics_endpoint}}/query
 Authorization: Basic {{metrics_api_key}}:{{metrics_api_secret}}
@@ -107,6 +121,18 @@ Content-Type: application/json
 @catalog_endpoint = {{$dotenv CATALOG_ENDPOINT}}
 @catalog_api_key = {{$dotenv CATALOG_API_KEY}}
 @catalog_api_secret = {{$dotenv CATALOG_API_SECRET}}
+
+### TOPIC LIST - {tenant}:{kafka-cluster-id}:{topic-name} 
+# GET {{catalog_endpoint}}/catalog/v1/search/basic?types=kafka_topic
+GET {{catalog_endpoint}}/catalog/v1/search/basic?types=kafka_topic
+Authorization: Basic {{catalog_api_key}}:{{catalog_api_secret}}
+Content-Type: application/json
+  
+### TOPIC LIST FILTERED BY ATTRIBUTE PREFIX
+GET {{catalog_endpoint}}/catalog/v1/search/attribute?type=kafka_topic&attrName=qualifiedName&attrValuePrefix=lkc-110k2j&attr=partitionsCount&attr=owner&attr=ownerEmail&deleted=false&limit=100&offset=0
+Authorization: Basic {{catalog_api_key}}:{{catalog_api_secret}}
+Content-Type: application/json
+
 
 ### TOPIC METADATA - jq '.entity.attributes | {name, qualifiedName, owner, ownerEmail}'
 @topic_name = topic_0

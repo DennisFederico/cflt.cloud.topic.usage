@@ -7,7 +7,7 @@ class KafkaV3Client:
     def __init__(self, http_client: HttpClient):
         self.http = http_client
 
-    def list_topics_with_partitions(self, cluster_id: str, include_internal_topics: bool = False) -> dict[str, int]:
+    def list_topics_with_partitions(self, cluster_id: str, include_internal_topics: bool = True) -> dict[str, int]:
         topics: dict[str, int] = {}
         next_url: str | None = f"/kafka/v3/clusters/{cluster_id}/topics"
 

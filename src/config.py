@@ -19,6 +19,7 @@ class AppConfig:
     catalog_api_key: str
     catalog_api_secret: str
     include_internal_topics: bool
+    criticality_threshold_bytes: int
     request_timeout_seconds: int
     max_retries: int
 
@@ -41,13 +42,22 @@ def _parse_bool(value: str, default: bool = False) -> bool:
     raise ConfigError(f"Invalid boolean value: {value}")
 
 
-def from_env(cluster_id_override: str | None = None, include_internal_override: bool | None = None) -> AppConfig:
+def from_env(
+    cluster_id_override: str | None = None,
+    include_internal_override: bool | None = None,
+    require_kafka: bool = True,
+) -> AppConfig:
     metrics_api_key = _require_env("METRICS_API_KEY")
     metrics_api_secret = _require_env("METRICS_API_SECRET")
 
-    kafka_api_key = _require_env("KAFKA_API_KEY")
-    kafka_api_secret = _require_env("KAFKA_API_SECRET")
-    kafka_api_endpoint = _require_env("KAFKA_API_ENDPOINT")
+    if require_kafka:
+        kafka_api_key = _require_env("KAFKA_API_KEY")
+        kafka_api_secret = _require_env("KAFKA_API_SECRET")
+        kafka_api_endpoint = _require_env("KAFKA_API_ENDPOINT")
+    else:
+        kafka_api_key = os.getenv("KAFKA_API_KEY", "").strip()
+        kafka_api_secret = os.getenv("KAFKA_API_SECRET", "").strip()
+        kafka_api_endpoint = os.getenv("KAFKA_API_ENDPOINT", "").strip()
 
     catalog_api_key = os.getenv("CATALOG_API_KEY", "").strip() or metrics_api_key
     catalog_api_secret = os.getenv("CATALOG_API_SECRET", "").strip() or metrics_api_secret
@@ -59,29 +69,33 @@ def from_env(cluster_id_override: str | None = None, include_internal_override: 
     include_internal_topics = (
         include_internal_override
         if include_internal_override is not None
-        else _parse_bool(os.getenv("INCLUDE_INTERNAL_TOPICS"), default=False)
+        else _parse_bool(os.getenv("INCLUDE_INTERNAL_TOPICS"), default=True)
     )
 
     request_timeout_seconds = int(os.getenv("REQUEST_TIMEOUT_SECONDS", "30"))
     max_retries = int(os.getenv("MAX_RETRIES", "3"))
+    criticality_threshold_bytes = int(os.getenv("CRITICALITY_THRESHOLD_BYTES", str(1024 * 1024)))
 
     if request_timeout_seconds < 1:
         raise ConfigError("REQUEST_TIMEOUT_SECONDS must be >= 1")
     if max_retries < 0:
         raise ConfigError("MAX_RETRIES must be >= 0")
+    if criticality_threshold_bytes < 1:
+        raise ConfigError("CRITICALITY_THRESHOLD_BYTES must be >= 1")
 
     return AppConfig(
         cluster_id=cluster_id,
         metrics_api_endpoint=os.getenv("METRICS_API_ENDPOINT", "https://api.telemetry.confluent.cloud").rstrip("/"),
         metrics_api_key=metrics_api_key,
         metrics_api_secret=metrics_api_secret,
-        kafka_api_endpoint=kafka_api_endpoint.rstrip("/"),
+        kafka_api_endpoint=kafka_api_endpoint.rstrip("/") if kafka_api_endpoint else "",
         kafka_api_key=kafka_api_key,
         kafka_api_secret=kafka_api_secret,
         catalog_api_endpoint=os.getenv("CATALOG_API_ENDPOINT", "https://api.confluent.cloud").rstrip("/"),
         catalog_api_key=catalog_api_key,
         catalog_api_secret=catalog_api_secret,
         include_internal_topics=include_internal_topics,
+        criticality_threshold_bytes=criticality_threshold_bytes,
         request_timeout_seconds=request_timeout_seconds,
         max_retries=max_retries,
     )

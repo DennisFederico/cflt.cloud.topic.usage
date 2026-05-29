@@ -5,6 +5,7 @@ from http_client import HttpClient
 
 
 QUERY_INTERVAL_LAST_7_DAYS = "now-7d/now-5m"
+QUERY_INTERVAL_RETAINED_SNAPSHOT = "now-5m/now-4m"
 
 
 class MetricsApiClient:
@@ -20,11 +21,24 @@ class MetricsApiClient:
         bytes_out = self._query_metric(cluster_id, "io.confluent.kafka.server/sent_bytes", interval)
         return bytes_in, bytes_out
 
+    def get_topic_retained_bytes(
+        self,
+        cluster_id: str,
+        interval: str = QUERY_INTERVAL_RETAINED_SNAPSHOT,
+    ) -> dict[str, float]:
+        return self._query_metric(
+            cluster_id,
+            "io.confluent.kafka.server/retained_bytes",
+            interval,
+            granularity="PT1M",
+        )
+
     def _query_metric(
         self,
         cluster_id: str,
         metric_name: str,
         interval: str = QUERY_INTERVAL_LAST_7_DAYS,
+        granularity: str = "ALL",
     ) -> dict[str, float]:
         results: dict[str, float] = defaultdict(float)
         page_token: str | None = None
@@ -39,7 +53,7 @@ class MetricsApiClient:
                     "op": "EQ",
                     "value": cluster_id,
                 },
-                "granularity": "ALL",
+                "granularity": granularity,
                 "intervals": [interval],
                 "format": "GROUPED",
                 "limit": 1000,

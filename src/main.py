@@ -1,6 +1,7 @@
 import argparse
 from datetime import datetime, timezone
 import json
+import os
 from pathlib import Path
 import re
 import sys
@@ -22,7 +23,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--include-internal-topics",
         action="store_true",
-        help="Include internal topics (default: false)",
+        help="Include internal topics (default: true)",
     )
     parser.add_argument(
         "--interval",
@@ -39,6 +40,18 @@ def parse_args() -> argparse.Namespace:
             "Useful with Docker volume mounts."
         ),
     )
+    parser.add_argument(
+        "--topic-source",
+        choices=("catalog", "kafka"),
+        default=os.getenv("TOPIC_SOURCE", "catalog").strip().lower() or "catalog",
+        help="Source for listing topics and partition counts (catalog or kafka). Default: catalog.",
+    )
+    parser.add_argument(
+        "--catalog-page-limit",
+        type=int,
+        default=int(os.getenv("CATALOG_TOPICS_PAGE_LIMIT", "500")),
+        help="Page size for Catalog topic listing pagination. Default: 500.",
+    )
     return parser.parse_args()
 
 
@@ -46,9 +59,13 @@ def run() -> int:
     args = parse_args()
     execution_time = datetime.now(timezone.utc)
 
+    if args.catalog_page_limit < 1:
+        raise ConfigError("catalog page limit must be >= 1")
+
     config = from_env(
         cluster_id_override=args.cluster_id,
         include_internal_override=True if args.include_internal_topics else None,
+        require_kafka=args.topic_source == "kafka",
     )
 
     metrics_client = MetricsApiClient(
@@ -56,15 +73,6 @@ def run() -> int:
             base_url=config.metrics_api_endpoint,
             api_key=config.metrics_api_key,
             api_secret=config.metrics_api_secret,
-            timeout_seconds=config.request_timeout_seconds,
-            max_retries=config.max_retries,
-        )
-    )
-    kafka_client = KafkaV3Client(
-        HttpClient(
-            base_url=config.kafka_api_endpoint,
-            api_key=config.kafka_api_key,
-            api_secret=config.kafka_api_secret,
             timeout_seconds=config.request_timeout_seconds,
             max_retries=config.max_retries,
         )
@@ -79,10 +87,27 @@ def run() -> int:
         )
     )
 
-    topic_partitions = kafka_client.list_topics_with_partitions(
-        cluster_id=config.cluster_id,
-        include_internal_topics=config.include_internal_topics,
-    )
+    if args.topic_source == "catalog":
+        topic_partitions, owners, owner_emails = catalog_client.list_topics_metadata(
+            cluster_id=config.cluster_id,
+            include_internal_topics=config.include_internal_topics,
+            page_limit=args.catalog_page_limit,
+        )
+    else:
+        kafka_client = KafkaV3Client(
+            HttpClient(
+                base_url=config.kafka_api_endpoint,
+                api_key=config.kafka_api_key,
+                api_secret=config.kafka_api_secret,
+                timeout_seconds=config.request_timeout_seconds,
+                max_retries=config.max_retries,
+            )
+        )
+        topic_partitions = kafka_client.list_topics_with_partitions(
+            cluster_id=config.cluster_id,
+            include_internal_topics=config.include_internal_topics,
+        )
+        owners, owner_emails = catalog_client.get_topic_owners(config.cluster_id, list(topic_partitions.keys()))
 
     query_interval = args.interval
     try:
@@ -94,7 +119,9 @@ def run() -> int:
         cluster_id=config.cluster_id,
         interval=query_interval,
     )
-    owners, owner_emails = catalog_client.get_topic_owners(config.cluster_id, list(topic_partitions.keys()))
+    retained_bytes = metrics_client.get_topic_retained_bytes(
+        cluster_id=config.cluster_id,
+    )
 
     output = build_topic_usage(
         cluster_id=config.cluster_id,
@@ -102,8 +129,10 @@ def run() -> int:
         topic_partitions=topic_partitions,
         bytes_in=bytes_in,
         bytes_out=bytes_out,
+        retained_bytes=retained_bytes,
         owners=owners,
         owner_emails=owner_emails,
+        criticality_threshold_bytes=config.criticality_threshold_bytes,
     )
     output_json = json.dumps(output, indent=2, sort_keys=False)
     print(output_json)
