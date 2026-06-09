@@ -6,3 +6,5 @@
 .pytest_cache
 **/__pycache__/
 **/*.pyc
+**/prometheus.yml
+**/data/clusters_config.json

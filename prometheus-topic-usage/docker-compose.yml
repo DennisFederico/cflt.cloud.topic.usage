@@ -11,8 +11,27 @@ services:
       - "--storage.tsdb.retention.time=${PROM_RETENTION_TIME:-180d}"
       - "--web.enable-lifecycle"
     volumes:
-      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus:/etc/prometheus
       - prometheus_data:/prometheus
+
+  dashboard:
+    build:
+      context: ./app
+      dockerfile: Dockerfile
+    container_name: cflt-dashboard
+    restart: unless-stopped
+    ports:
+      - "${PORT:-8000}:8000"
+    env_file:
+      - .env
+    environment:
+      - PROMETHEUS_CONFIG_PATH=/prometheus/prometheus.yml
+      - PROMETHEUS_URL=http://prometheus:9090
+      - CLUSTERS_CONFIG_PATH=/data/clusters_config.json
+    volumes:
+      - ./prometheus:/prometheus
+      - ./data:/data
 
 volumes:
   prometheus_data:
+

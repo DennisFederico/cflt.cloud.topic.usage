@@ -1,0 +1,18 @@
+## DOCS
+[KAFKA REST](https://docs.confluent.io/cloud/current/kafka-rest/kafka-rest-cc.html)
+[CLOUD METRICS](https://docs.confluent.io/cloud/current/monitoring/metrics-api.html)
+[METRICS DATASETS](https://api.telemetry.confluent.cloud/docs/descriptors/datasets/cloud)
+https://api.telemetry.confluent.cloud/docs
+
+@cloud_metrics_endpoint = {{$dotenv METRICS_API_ENDPOINT}}
+@cloud_api_key = {{$dotenv CLOUD_API_KEY}}
+@cloud_api_secret = {{$dotenv CLOUD_API_SECRET}}
+
+
+### Calling the resources endpint
+GET {{cloud_metrics_endpoint}}/descriptors/resources
+Authorization: Basic {{cloud_api_key}}:{{cloud_api_secret}}
+
+### Calling the discovery endpoint
+GET {{cloud_metrics_endpoint}}/discovery
+Authorization: Basic {{cloud_api_key}}:{{cloud_api_secret}}
