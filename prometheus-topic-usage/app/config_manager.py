@@ -88,9 +88,10 @@ class ConfigManager:
       metric:
         - io.confluent.kafka.server/received_bytes
         - io.confluent.kafka.server/sent_bytes
+        - io.confluent.kafka.server/retained_bytes
     metric_relabel_configs:
       - source_labels: [__name__]
-        regex: confluent_kafka_server_received_bytes|confluent_kafka_server_sent_bytes|confluent_scrape_resource_access_error
+        regex: confluent_kafka_server_received_bytes|confluent_kafka_server_sent_bytes|confluent_kafka_server_retained_bytes|confluent_scrape_resource_access_error
         action: keep"""
             jobs.append(job)
 

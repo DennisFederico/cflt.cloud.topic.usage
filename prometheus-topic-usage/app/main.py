@@ -113,11 +113,53 @@ class ClusterConfigModel(BaseModel):
     kafka_api_key: str
     kafka_api_secret: str
 
+def resolve_cluster_name_from_prometheus(prom_url: str, cluster_id: str) -> str | None:
+    """Query Prometheus series endpoint for the kafka_name label associated with the cluster ID."""
+    url = f"{prom_url}/api/v1/series"
+    # Try cflt_cluster_id
+    try:
+        response = requests.get(url, params={"match[]": f'{{cflt_cluster_id="{cluster_id}"}}'}, timeout=5)
+        if response.status_code == 200:
+            data = response.json().get("data", [])
+            for item in data:
+                name = item.get("kafka_name")
+                if name:
+                    return name
+    except Exception as e:
+        print(f"Error querying series by cflt_cluster_id: {e}")
+
+    # Fallback to kafka_id
+    try:
+        response = requests.get(url, params={"match[]": f'{{kafka_id="{cluster_id}"}}'}, timeout=5)
+        if response.status_code == 200:
+            data = response.json().get("data", [])
+            for item in data:
+                name = item.get("kafka_name")
+                if name:
+                    return name
+    except Exception as e:
+        print(f"Error querying series by kafka_id: {e}")
+    return None
+
 @app.get("/api/clusters")
 def get_clusters():
     """Retrieve the list of discovered and configured clusters."""
     config = config_mgr.load_clusters_config()
-    return config.get("clusters", {})
+    clusters = config.get("clusters", {})
+    
+    # Try to dynamically resolve names from Prometheus for default-named clusters
+    updated = False
+    for cid, cluster in clusters.items():
+        if cluster.get("name", "").startswith("Cluster lkc-"):
+            resolved_name = resolve_cluster_name_from_prometheus(config_mgr.prom_url, cid)
+            if resolved_name:
+                cluster["name"] = resolved_name
+                updated = True
+                
+    if updated:
+        config_mgr.save_clusters_config(config)
+        
+    return clusters
 
 @app.post("/api/clusters/{cluster_id}/config")
 def configure_cluster(cluster_id: str, payload: ClusterConfigModel):

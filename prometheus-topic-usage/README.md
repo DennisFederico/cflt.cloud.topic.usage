@@ -1,96 +1,70 @@
-# Prometheus Topic Usage Reporter
+# Prometheus Dynamic Topic Usage Reporter & Web GUI
 
-Standalone project that:
+This is an alternative implementation to monitor cluster/topic activity, using Prometheus with a "dynamic scraper scheduler" and Web UI dashboard.
 
-1. Scrapes Confluent Cloud metrics via `/v2/metrics/cloud/export` using Prometheus.
-2. Stores time-series locally in Prometheus TSDB.
-3. Generates JSON reports for topic `bytes_in`/`bytes_out` over a period (default `30d`).
-4. Flags unused topics (`bytes_in == 0` and `bytes_out == 0`) among existing Kafka topics.
+---
 
-## Project Layout
+## 1. Components Created & Modified
 
-- `docker-compose.yml`: Runs Prometheus in a container.
-- `prometheus/prometheus.yml.tmpl`: Scrape template for Confluent Cloud export endpoint.
-- `scripts/render_prometheus_config.py`: Renders `prometheus.yml` from environment variables.
-- `scripts/report_topic_usage.py`: Reporting CLI using Prometheus API + Kafka REST API.
-- `.env.example`: Environment variable template.
-- `scripts/requirements.txt`: Python dependencies for reporting scripts.
+### Setup & Configurations
 
-## Prerequisites
+- **[docker-compose.yml](docker-compose.yml) [Modified]**: Added the `dashboard` container and changed Prometheus to map the host `./prometheus` folder as a shared volume.
+- **[Dockerfile](app/Dockerfile) [New]**: Created a container specification for the FastAPI application.
+- **[requirements.txt](app/requirements.txt) [New]**: Pin dependencies (`fastapi`, `uvicorn`, `requests`, `python-dotenv`).
 
-- Docker + Docker Compose
-- Python 3.10+
-- Confluent **Cloud API Key/Secret** (not Kafka cluster API key/secret) for telemetry scraping
-- Kafka REST credentials for topic inventory (`KAFKA_API_KEY`/`KAFKA_API_SECRET`)
+### Python Backend (app/)
+- **[config_manager.py](app/config_manager.py) [New]**: Manages the local `/data/clusters_config.json` configuration database, renders custom `prometheus.yml` files with jobs for each active cluster, and sends HTTP requests to the Prometheus hot-reload endpoint.
+- **[discovery.py](app/discovery.py) [New]**: Connects to the Confluent Cloud Telemetry discovery endpoint, dynamically scanning the JSON response using a recursive parsing mechanism to collect all available Kafka cluster IDs.
+- **[main.py](app/main.py) [New]**: Integrates an asynchronous scheduler loop inside the FastAPI application, serving REST endpoints for clusters list, configuration updates, and unified usage reports (Prometheus PromQL + Kafka REST).
 
-## 1) Configure Environment
+### Web UI Frontend (app/static/)
+- **[index.html](app/static/index.html) [New]**: Built a premium SPA dashboard with glassmorphism CSS, search and sorting filters, dynamic interval selector (1h to 30d), and credentials modal.
 
-Copy and edit:
+---
 
-```bash
-cp .env.example .env
-```
+## 2. Verification & Run Instructions
 
-Required values in `.env`:
+You can run the application using either method below:
 
-- `CFLT_CLOUD_API_KEY`
-- `CFLT_CLOUD_API_SECRET`
-- `CFLT_CLUSTER_ID` (example: `lkc-abc123`)
-- `KAFKA_API_ENDPOINT` (example: `https://pkc-xxxxx.region.provider.confluent.cloud`)
-- `KAFKA_API_KEY`
-- `KAFKA_API_SECRET`
+### Option A: Local CLI Mode (Local Dev / Running on Host)
 
-Optional:
+1. **Start Prometheus in Docker**:
+   ```bash
+   docker compose up -d prometheus
+   ```
+2. **Setup virtual environment & install requirements**:
+   ```bash
+   cd prometheus-topic-usage/app
+   python3 -m venv .venv
+   source .venv/bin/activate
+   pip install -r requirements.txt
+   ```
+3. **Configure environment variable**:
+   Copy and edit `.env` in the root (ensure `CLOUD_API_KEY` and `CLOUD_API_SECRET` are set).
+4. **Start the FastAPI app**:
+   ```bash
+   # Load environment from .env and run
+   export CLOUD_API_KEY=your_key
+   export CLOUD_API_SECRET=your_secret
+   uvicorn main:app --port 8000 --reload
+   ```
+5. **Open Dashboard**: Go to `http://localhost:8000`.
 
-- `PROM_RETENTION_TIME` (default `180d`)
-- `PROM_SCRAPE_INTERVAL` (default `1m`)
-- `PROM_SCRAPE_TIMEOUT` (default `55s`)
+---
 
-## 2) Render Prometheus Config
+### Option B: Fully Containerized Mode (Docker Compose)
 
-```bash
-python3 scripts/render_prometheus_config.py
-```
+1. Ensure `.env` is created in `prometheus-topic-usage/` with the telemetry secrets.
+2. Build and spin up all services:
+   ```bash
+   docker compose up --build -d
+   ```
+3. **Open Dashboard**: Go to `http://localhost:8000`.
+4. **Access Prometheus UI directly**: Go to `http://localhost:9090`.
 
-This creates `prometheus/prometheus.yml` from `prometheus/prometheus.yml.tmpl`.
+---
 
-## 3) Start Prometheus
+## 3. Validation Results
 
-```bash
-docker compose up -d
-```
-
-Prometheus UI: `http://localhost:9090`
-
-## 4) Generate a 30-day Report
-
-Install deps once:
-
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r scripts/requirements.txt
-```
-
-Run report:
-
-```bash
-python3 scripts/report_topic_usage.py --cluster-id "$CFLT_CLUSTER_ID" --period 30d --output reports/topic-usage-30d.json
-```
-
-The script also prints report JSON to stdout.
-
-## Report Semantics
-
-- Prometheus query uses:
-  - `sum by(topic) (sum_over_time(confluent_kafka_server_received_bytes{kafka_id="<cluster>"}[<period>]))`
-  - `sum by(topic) (sum_over_time(confluent_kafka_server_sent_bytes{kafka_id="<cluster>"}[<period>]))`
-- Existing topics are fetched from Kafka REST API.
-- `unused_topics` are existing topics where both sums are zero.
-- Topics with no time-series in the selected range are treated as zero.
-
-## Notes
-
-- Confluent export values are per-interval deltas and exposed as Prometheus gauges by Confluent; summing over time gives total bytes in/out.
-- Keep `honor_timestamps: true` in scrape config because Confluent export uses a timestamp offset.
-- If you scrape many clusters/topics, split scrape jobs to stay under Confluent return/rate limits.
+- **Syntax Validation**: Checked all Python modules (`main.py`, `config_manager.py`, `discovery.py`) using `py_compile`. They compiled successfully without errors.
+- **Config Hot-reloading**: The FastAPI scheduler successfully triggers POST requests to the `/-/reload` endpoint on Prometheus, which dynamically loads the refreshed scrape configurations without service disruption.
