@@ -3,11 +3,17 @@ import os
 from pathlib import Path
 import requests
 from typing import Any, Dict
+from dotenv import load_dotenv
 
 DEFAULT_CLUSTERS_CONFIG = {"clusters": {}}
 
 class ConfigManager:
     def __init__(self):
+        # Load environment variables
+        load_dotenv()
+        load_dotenv(Path(__file__).parent.parent / ".env")
+        load_dotenv(Path(__file__).parent.parent.parent / ".env")
+
         # Resolve config paths
         self.prom_config_path = Path(os.getenv("PROMETHEUS_CONFIG_PATH", "../prometheus/prometheus.yml")).resolve()
         self.clusters_config_path = Path(os.getenv("CLUSTERS_CONFIG_PATH", "../data/clusters_config.json")).resolve()

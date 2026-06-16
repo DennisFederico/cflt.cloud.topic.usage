@@ -14,11 +14,11 @@ This is an alternative implementation to monitor cluster/topic activity, using P
 
 ### Python Backend (app/)
 - **[config_manager.py](app/config_manager.py) [New]**: Manages the local `/data/clusters_config.json` configuration database, renders custom `prometheus.yml` files with jobs for each active cluster, and sends HTTP requests to the Prometheus hot-reload endpoint.
-- **[discovery.py](app/discovery.py) [New]**: Connects to the Confluent Cloud Telemetry discovery endpoint, dynamically scanning the JSON response using a recursive parsing mechanism to collect all available Kafka cluster IDs.
+- **[discovery.py](app/discovery.py) [New]**: Connects to Confluent Cloud APIs to discover active environments (`/org/v2/environments`) and associated clusters (`/cmk/v2/clusters`) using `metadata.next` paginated queries. Automatically resolves environment names, IDs, display names, and REST endpoints. Falls back to paginated telemetry endpoints (`/discovery` and `/descriptors/resources`) on permission errors.
 - **[main.py](app/main.py) [New]**: Integrates an asynchronous scheduler loop inside the FastAPI application, serving REST endpoints for clusters list, configuration updates, and unified usage reports (Prometheus PromQL + Kafka REST).
 
 ### Web UI Frontend (app/static/)
-- **[index.html](app/static/index.html) [New]**: Built a premium SPA dashboard with glassmorphism CSS, search and sorting filters, dynamic interval selector (1h to 30d), and credentials modal.
+- **[index.html](app/static/index.html) [New]**: Built a premium SPA dashboard with glassmorphism CSS, search and sorting filters, dynamic interval selector (1h to 30d), collapsible accordions for grouping clusters by environment, and credentials modal.
 
 ---
 
@@ -62,9 +62,3 @@ You can run the application using either method below:
 3. **Open Dashboard**: Go to `http://localhost:8000`.
 4. **Access Prometheus UI directly**: Go to `http://localhost:9090`.
 
----
-
-## 3. Validation Results
-
-- **Syntax Validation**: Checked all Python modules (`main.py`, `config_manager.py`, `discovery.py`) using `py_compile`. They compiled successfully without errors.
-- **Config Hot-reloading**: The FastAPI scheduler successfully triggers POST requests to the `/-/reload` endpoint on Prometheus, which dynamically loads the refreshed scrape configurations without service disruption.

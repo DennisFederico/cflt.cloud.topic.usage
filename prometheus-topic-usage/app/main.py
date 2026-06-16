@@ -34,8 +34,8 @@ async def check_and_update_clusters():
     """Discover clusters, save new ones, and update Prometheus config."""
     print("Running cluster discovery loop...")
     try:
-        discovered_cids = discovery.discover_clusters()
-        if not discovered_cids:
+        discovered_clusters = discovery.discover_clusters()
+        if not discovered_clusters:
             print("No clusters discovered.")
             return
 
@@ -44,28 +44,48 @@ async def check_and_update_clusters():
             config["clusters"] = {}
 
         changed = False
-        for cid in discovered_cids:
+        for cid, meta in discovered_clusters.items():
             if cid not in config["clusters"]:
                 config["clusters"][cid] = {
-                    "name": f"Cluster {cid}",
-                    "kafka_api_endpoint": "",
+                    "name": meta.get("name") or f"Cluster {cid}",
+                    "environment_id": meta.get("environment_id") or "",
+                    "environment_name": meta.get("environment_name") or "",
+                    "kafka_api_endpoint": meta.get("kafka_api_endpoint") or "",
                     "kafka_api_key": "",
                     "kafka_api_secret": "",
                     "configured": False
                 }
                 changed = True
+            else:
+                cluster_entry = config["clusters"][cid]
+                # Update environment metadata if it has changed or is not set
+                for key in ["environment_id", "environment_name"]:
+                    if key in meta and cluster_entry.get(key) != meta[key]:
+                        cluster_entry[key] = meta[key]
+                        changed = True
+                
+                # If name is default, update to display name
+                if meta.get("name") and (cluster_entry.get("name") == f"Cluster {cid}" or not cluster_entry.get("name")):
+                    cluster_entry["name"] = meta["name"]
+                    changed = True
+
+                # Update endpoint if not currently set
+                if meta.get("kafka_api_endpoint") and not cluster_entry.get("kafka_api_endpoint"):
+                    cluster_entry["kafka_api_endpoint"] = meta["kafka_api_endpoint"]
+                    changed = True
 
         # Clean up config if a cluster is no longer returned (optional, but keep for consistency)
         # We only remove it if it was never configured
         for cid in list(config["clusters"].keys()):
-            if cid not in discovered_cids and not config["clusters"][cid].get("configured", False):
+            if cid not in discovered_clusters and not config["clusters"][cid].get("configured", False):
                 del config["clusters"][cid]
                 changed = True
 
+        discovered_cids = list(discovered_clusters.keys())
         if changed or not config_mgr.prom_config_path.exists():
             print("Cluster list changed or config missing. Generating new prometheus.yml...")
             config_mgr.save_clusters_config(config)
-            config_mgr.generate_prometheus_config(list(discovered_cids))
+            config_mgr.generate_prometheus_config(discovered_cids)
         else:
             # Generate config anyway if file doesn't exist, just in case
             if not config_mgr.prom_config_path.exists():
@@ -263,15 +283,18 @@ def get_cluster_usage(cluster_id: str, period: str = "30d"):
                     "topic": topic,
                     "bytes_in": 0,
                     "bytes_out": 0,
+                    "retained_bytes": 0,
                     "status": "unused" if is_configured else "active"
                 })
             else:
                 bytes_in_val = (i + 1) * 1024 * 500
                 bytes_out_val = (i + 1) * 1024 * 900
+                retained_val = (i + 1) * 1024 * 1200
                 mock_topics.append({
                     "topic": topic,
                     "bytes_in": bytes_in_val,
                     "bytes_out": bytes_out_val,
+                    "retained_bytes": retained_val,
                     "status": "active"
                 })
         
@@ -292,20 +315,24 @@ def get_cluster_usage(cluster_id: str, period: str = "30d"):
             "topics": mock_topics
         }
 
-    # 1. Query Prometheus for bytes in and out
+    # 1. Query Prometheus for bytes in, bytes out, and retained bytes
     # Try cflt_cluster_id first, then fallback to kafka_id
     query_in = f'sum by (topic) (sum_over_time(confluent_kafka_server_received_bytes{{cflt_cluster_id="{cluster_id}"}}[{period}]))'
     query_out = f'sum by (topic) (sum_over_time(confluent_kafka_server_sent_bytes{{cflt_cluster_id="{cluster_id}"}}[{period}]))'
+    query_retained = f'sum by (topic) (max_over_time(confluent_kafka_server_retained_bytes{{cflt_cluster_id="{cluster_id}"}}[{period}]))'
     
     bytes_in = query_prom_bytes(config_mgr.prom_url, query_in)
     bytes_out = query_prom_bytes(config_mgr.prom_url, query_out)
+    bytes_retained = query_prom_bytes(config_mgr.prom_url, query_retained)
 
     # Fallback to kafka_id if we got 0 metrics
-    if not bytes_in and not bytes_out:
+    if not bytes_in and not bytes_out and not bytes_retained:
         query_in_fb = f'sum by (topic) (sum_over_time(confluent_kafka_server_received_bytes{{kafka_id="{cluster_id}"}}[{period}]))'
         query_out_fb = f'sum by (topic) (sum_over_time(confluent_kafka_server_sent_bytes{{kafka_id="{cluster_id}"}}[{period}]))'
+        query_retained_fb = f'sum by (topic) (max_over_time(confluent_kafka_server_retained_bytes{{kafka_id="{cluster_id}"}}[{period}]))'
         bytes_in = query_prom_bytes(config_mgr.prom_url, query_in_fb)
         bytes_out = query_prom_bytes(config_mgr.prom_url, query_out_fb)
+        bytes_retained = query_prom_bytes(config_mgr.prom_url, query_retained_fb)
 
     topics_list = []
     is_configured = cluster.get("configured", False)
@@ -328,24 +355,29 @@ def get_cluster_usage(cluster_id: str, period: str = "30d"):
         for topic in inventory:
             bin_val = bytes_in.get(topic, 0.0)
             bout_val = bytes_out.get(topic, 0.0)
+            bret_val = bytes_retained.get(topic, 0.0)
             is_unused = (bin_val == 0.0) and (bout_val == 0.0)
             topics_list.append({
                 "topic": topic,
                 "bytes_in": int(bin_val) if bin_val.is_integer() else bin_val,
                 "bytes_out": int(bout_val) if bout_val.is_integer() else bout_val,
+                "retained_bytes": int(bret_val) if bret_val.is_integer() else bret_val,
                 "status": "unused" if is_unused else "active"
             })
     else:
-        # Unconfigured - only return topics that have telemetry in Prometheus
-        all_metric_topics = set(bytes_in.keys()).union(set(bytes_out.keys()))
+        # Unconfigured - return topics that have any telemetry in Prometheus (including retained_bytes)
+        all_metric_topics = set(bytes_in.keys()).union(set(bytes_out.keys())).union(set(bytes_retained.keys()))
         for topic in sorted(list(all_metric_topics)):
             bin_val = bytes_in.get(topic, 0.0)
             bout_val = bytes_out.get(topic, 0.0)
+            bret_val = bytes_retained.get(topic, 0.0)
+            is_unused = (bin_val == 0.0) and (bout_val == 0.0)
             topics_list.append({
                 "topic": topic,
                 "bytes_in": int(bin_val) if bin_val.is_integer() else bin_val,
                 "bytes_out": int(bout_val) if bout_val.is_integer() else bout_val,
-                "status": "active"  # Since they have timeseries, we assume active
+                "retained_bytes": int(bret_val) if bret_val.is_integer() else bret_val,
+                "status": "unused" if is_unused else "active"
             })
 
     # Count stats
