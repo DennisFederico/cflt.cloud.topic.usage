@@ -8,3 +8,10 @@
 **/*.pyc
 **/prometheus.yml
 **/data/clusters_config.json
+.cflt-local/
+.gcloud.json
+terraform/.terraform/
+terraform/terraform.tfstate*
+terraform/.terraform.lock.hcl
+terraform/app_deploy.zip
+terraform

@@ -11,12 +11,13 @@ class ConfigManager:
     def __init__(self):
         # Load environment variables
         load_dotenv()
-        load_dotenv(Path(__file__).parent.parent / ".env")
-        load_dotenv(Path(__file__).parent.parent.parent / ".env")
+        ROOT = Path(__file__).resolve().parent.parent
+        load_dotenv(ROOT / ".env")
+        load_dotenv(ROOT.parent / ".env")
 
         # Resolve config paths
-        self.prom_config_path = Path(os.getenv("PROMETHEUS_CONFIG_PATH", "../prometheus/prometheus.yml")).resolve()
-        self.clusters_config_path = Path(os.getenv("CLUSTERS_CONFIG_PATH", "../data/clusters_config.json")).resolve()
+        self.prom_config_path = Path(os.getenv("PROMETHEUS_CONFIG_PATH", ROOT / ".cflt-local/prometheus/prometheus.yml")).resolve()
+        self.clusters_config_path = Path(os.getenv("CLUSTERS_CONFIG_PATH", ROOT / ".cflt-local/data/clusters_config.json")).resolve()
         self.prom_url = os.getenv("PROMETHEUS_URL", "http://localhost:9090").rstrip("/")
 
         # Telemetry API credentials

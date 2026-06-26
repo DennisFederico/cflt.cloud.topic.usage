@@ -8,8 +8,8 @@ from pathlib import Path
 from string import Template
 
 ROOT = Path(__file__).resolve().parents[1]
-TEMPLATE_PATH = ROOT / "prometheus" / "prometheus.yml.tmpl"
-OUTPUT_PATH = ROOT / "prometheus" / "prometheus.yml"
+TEMPLATE_PATH = ROOT / ".cflt-local" / "prometheus" / "prometheus.yml.tmpl"
+OUTPUT_PATH = ROOT / ".cflt-local" / "prometheus" / "prometheus.yml"
 
 REQUIRED_VARS = (
     "CFLT_CLOUD_API_KEY",

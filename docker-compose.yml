@@ -11,7 +11,7 @@ services:
       - "--storage.tsdb.retention.time=${PROM_RETENTION_TIME:-180d}"
       - "--web.enable-lifecycle"
     volumes:
-      - ./prometheus:/etc/prometheus
+      - ./.cflt-local/prometheus:/etc/prometheus
       - prometheus_data:/prometheus
 
   dashboard:
@@ -29,8 +29,8 @@ services:
       - PROMETHEUS_URL=http://prometheus:9090
       - CLUSTERS_CONFIG_PATH=/data/clusters_config.json
     volumes:
-      - ./prometheus:/prometheus
-      - ./data:/data
+      - ./.cflt-local/prometheus:/prometheus
+      - ./.cflt-local/data:/data
 
 volumes:
   prometheus_data:
