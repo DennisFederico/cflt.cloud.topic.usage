@@ -12,6 +12,6 @@
 .gcloud.json
 terraform/.terraform/
 terraform/terraform.tfstate*
+terraform/*.tfvars
 terraform/.terraform.lock.hcl
 terraform/app_deploy.zip
-terraform
