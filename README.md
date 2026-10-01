@@ -107,3 +107,16 @@ terraform apply
 * Uploads the versioned archive to GCS.
 * Connects via `gcloud compute ssh` to update the application live on the VM.
 * Protected by `lifecycle { prevent_destroy = true }` so your VM and Prometheus historical data are never destroyed.
+
+### Cleaning Up Old GCS Bundles
+
+To purge older deployment bundles from your storage bucket while keeping recent ones for rollback safety:
+
+```bash
+./scripts/clean_bucket.sh            # Keeps the latest 2 versions
+./scripts/clean_bucket.sh --keep 1   # Keeps only the latest version
+./scripts/clean_bucket.sh --dry-run  # Preview without deleting
+```
+
+Additionally, Terraform configures an automatic GCS Lifecycle policy to purge artifacts older than 14 days.
+
