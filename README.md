@@ -15,7 +15,10 @@ All dynamic and hot-reloaded state folders are located inside a single hidden di
 
 * `.cflt-local/data/clusters_config.json`: Local cache database of Confluent Cloud clusters, environments, and configured Kafka REST API credentials.
 * `.cflt-local/prometheus/prometheus.yml`: Dynamically generated Prometheus configuration containing targets for all active clusters.
-* `.cflt-local/prometheus/prometheus.yml.tmpl`: Prometheus config template used by the FastAPI config manager.
+
+Template files:
+
+* `resources/prometheus.yml.tmpl`: Prometheus config template used by the FastAPI config manager.
 
 ---
 

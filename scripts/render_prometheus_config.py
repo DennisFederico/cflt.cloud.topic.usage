@@ -8,7 +8,7 @@ from pathlib import Path
 from string import Template
 
 ROOT = Path(__file__).resolve().parents[1]
-TEMPLATE_PATH = ROOT / ".cflt-local" / "prometheus" / "prometheus.yml.tmpl"
+TEMPLATE_PATH = ROOT / "resources" / "prometheus.yml.tmpl"
 OUTPUT_PATH = ROOT / ".cflt-local" / "prometheus" / "prometheus.yml"
 
 REQUIRED_VARS = (
