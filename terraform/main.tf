@@ -35,7 +35,7 @@ resource "null_resource" "build_zip" {
 
   provisioner "local-exec" {
     working_dir = "${path.module}/.."
-    command     = "zip -r terraform/app_deploy.zip app docker-compose.yml .cflt-local/prometheus/prometheus.yml.tmpl -x \"app/.venv/*\" \"app/__pycache__/*\" \"app/.DS_Store\""
+    command     = "zip -r terraform/app_deploy.zip app docker-compose.yml resources/prometheus.yml.tmpl -x \"app/.venv/*\" \"app/__pycache__/*\" \"app/.DS_Store\""
   }
 }
 
@@ -64,6 +64,7 @@ resource "google_storage_bucket_object" "app_archive" {
 
 # Service Account for the VM
 resource "google_service_account" "vm_sa" {
+  create_ignore_already_exists = true
   account_id   = "cflt-dashboard-vm-sa"
   display_name = "Service Account for CFLT Usage Dashboard VM"
   project      = var.project_id
@@ -78,7 +79,7 @@ resource "google_storage_bucket_iam_member" "viewer" {
 
 # Firewall Rule to allow HTTP traffic on port 8000
 resource "google_compute_firewall" "allow_http_8000" {
-  name    = "allow-cflt-dashboard-8000"
+  name    = "allow-cflt-dashboard-8000-${var.vm_name}"
   network = data.google_compute_network.vpc.name
   project = var.project_id
 
@@ -88,7 +89,7 @@ resource "google_compute_firewall" "allow_http_8000" {
   }
 
   source_ranges = var.allowed_cidr_ranges
-  target_tags   = ["cflt-dashboard"]
+  target_tags   = [var.vm_name]
 }
 
 # Compute Engine Instance
@@ -98,7 +99,7 @@ resource "google_compute_instance" "vm" {
   zone         = var.zone
   project      = var.project_id
 
-  tags = ["cflt-dashboard"]
+  tags = [var.vm_name]
 
   boot_disk {
     initialize_params {
@@ -131,7 +132,7 @@ resource "google_compute_instance" "vm" {
 
 # Firewall Rule to allow SSH traffic on port 22
 resource "google_compute_firewall" "allow_ssh" {
-  name    = "allow-ssh-cflt-dashboard"
+  name    = "allow-ssh-cflt-dashboard-${var.vm_name}"
   network = data.google_compute_network.vpc.name
   project = var.project_id
 
@@ -141,5 +142,5 @@ resource "google_compute_firewall" "allow_ssh" {
   }
 
   source_ranges = var.allowed_ssh_cidr_ranges
-  target_tags   = ["cflt-dashboard"]
+  target_tags   = [var.vm_name]
 }
