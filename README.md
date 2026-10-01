@@ -119,4 +119,3 @@ To purge older deployment bundles from your storage bucket while keeping recent 
 ```
 
 Additionally, Terraform configures an automatic GCS Lifecycle policy to purge artifacts older than 14 days.
-
