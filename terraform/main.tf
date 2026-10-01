@@ -67,6 +67,15 @@ resource "google_storage_bucket" "deploy_bucket" {
   project                     = var.project_id
   force_destroy               = true
   uniform_bucket_level_access = true
+
+  lifecycle_rule {
+    action {
+      type = "Delete"
+    }
+    condition {
+      age = 14
+    }
+  }
 }
 
 # Upload ZIP deployment package to GCS
