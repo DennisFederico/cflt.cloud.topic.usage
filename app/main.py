@@ -82,16 +82,12 @@ async def check_and_update_clusters():
                 changed = True
 
         discovered_cids = list(discovered_clusters.keys())
-        if changed or not config_mgr.prom_config_path.exists():
-            print("Cluster list changed or config missing. Generating new prometheus.yml...")
+        if changed:
+            print("Cluster list changed. Saving updated clusters config...")
             config_mgr.save_clusters_config(config)
-            config_mgr.generate_prometheus_config(discovered_cids)
-        else:
-            # Generate config anyway if file doesn't exist, just in case
-            if not config_mgr.prom_config_path.exists():
-                config_mgr.generate_prometheus_config(list(discovered_cids))
-            else:
-                print("No changes in cluster list. Configuration is up to date.")
+
+        # Check and ensure prometheus.yml is in sync with latest generator logic (updates only if content differs)
+        config_mgr.generate_prometheus_config(discovered_cids)
     except Exception as e:
         print(f"Error in check_and_update_clusters background loop: {e}")
 
@@ -161,6 +157,32 @@ def resolve_cluster_name_from_prometheus(prom_url: str, cluster_id: str) -> str 
         print(f"Error querying series by kafka_id: {e}")
     return None
 
+def query_prom_instant_clusters(prom_url: str, query: str) -> Dict[str, float]:
+    """Execute PromQL instant query and return a map of cluster_id -> value."""
+    url = f"{prom_url}/api/v1/query"
+    try:
+        response = requests.get(url, params={"query": query}, timeout=10)
+        response.raise_for_status()
+        res_json = response.json()
+        if res_json.get("status") != "success":
+            return {}
+        
+        result_list = res_json.get("data", {}).get("result", [])
+        totals = {}
+        for item in result_list:
+            metric = item.get("metric", {})
+            cid = metric.get("cflt_cluster_id") or metric.get("kafka_id")
+            value = item.get("value")
+            if cid and isinstance(value, list) and len(value) == 2:
+                try:
+                    totals[cid] = float(value[1])
+                except (ValueError, TypeError):
+                    continue
+        return totals
+    except Exception as e:
+        print(f"Error querying Prometheus instant clusters ({query}): {e}")
+        return {}
+
 @app.get("/api/clusters")
 def get_clusters():
     """Retrieve the list of discovered and configured clusters."""
@@ -178,6 +200,21 @@ def get_clusters():
                 
     if updated:
         config_mgr.save_clusters_config(config)
+
+    # Query cluster partition counts and topic counts from Prometheus
+    partition_map = query_prom_instant_clusters(config_mgr.prom_url, "confluent_kafka_server_partition_count")
+    topic_map = query_prom_instant_clusters(config_mgr.prom_url, "count by (cflt_cluster_id) (confluent_kafka_server_retained_bytes)")
+    if not topic_map:
+        topic_map = query_prom_instant_clusters(config_mgr.prom_url, "count by (kafka_id) (confluent_kafka_server_retained_bytes)")
+
+    for cid, cluster in clusters.items():
+        cluster["partitions_count"] = int(partition_map.get(cid, 0))
+        cluster["topics_count"] = int(topic_map.get(cid, 0))
+        
+        # Mock fallback if in mock mode
+        if (cid.startswith("lkc-mock-") or config_mgr.cloud_api_key == "MOCK") and cluster["partitions_count"] == 0:
+            cluster["partitions_count"] = 24
+            cluster["topics_count"] = 7
         
     return clusters
 
@@ -312,6 +349,7 @@ def get_cluster_usage(cluster_id: str, period: str = "30d"):
             "total_topics_count": total,
             "active_topics_count": active,
             "unused_topics_count": unused,
+            "total_partitions_count": 48,
             "topics": mock_topics
         }
 
@@ -333,6 +371,14 @@ def get_cluster_usage(cluster_id: str, period: str = "30d"):
         bytes_in = query_prom_bytes(config_mgr.prom_url, query_in_fb)
         bytes_out = query_prom_bytes(config_mgr.prom_url, query_out_fb)
         bytes_retained = query_prom_bytes(config_mgr.prom_url, query_retained_fb)
+
+    # Query cluster total partitions
+    query_partitions = f'confluent_kafka_server_partition_count{{cflt_cluster_id="{cluster_id}"}}'
+    partitions_data = query_prom_instant_clusters(config_mgr.prom_url, query_partitions)
+    if not partitions_data:
+        query_partitions_fb = f'confluent_kafka_server_partition_count{{kafka_id="{cluster_id}"}}'
+        partitions_data = query_prom_instant_clusters(config_mgr.prom_url, query_partitions_fb)
+    total_partitions = int(partitions_data[cluster_id]) if (partitions_data and cluster_id in partitions_data) else None
 
     topics_list = []
     is_configured = cluster.get("configured", False)
@@ -392,6 +438,7 @@ def get_cluster_usage(cluster_id: str, period: str = "30d"):
         "total_topics_count": total,
         "active_topics_count": active,
         "unused_topics_count": unused,
+        "total_partitions_count": total_partitions,
         "topics": topics_list
     }
 

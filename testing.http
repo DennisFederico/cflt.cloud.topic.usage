@@ -3,6 +3,8 @@
 [CLOUD METRICS](https://docs.confluent.io/cloud/current/monitoring/metrics-api.html)
 [METRICS DATASETS](https://api.telemetry.confluent.cloud/docs/descriptors/datasets/cloud)
 https://api.telemetry.confluent.cloud/docs
+[METRICS ENDPOINT](https://api.telemetry.confluent.cloud/v2/metrics/cloud)
+
 
 @cloud_metrics_endpoint = {{$dotenv METRICS_API_ENDPOINT}}
 @cloud_api_key = {{$dotenv CLOUD_API_KEY}}
@@ -16,3 +18,12 @@ Authorization: Basic {{cloud_api_key}}:{{cloud_api_secret}}
 ### Calling the discovery endpoint
 GET {{cloud_metrics_endpoint}}/discovery
 Authorization: Basic {{cloud_api_key}}:{{cloud_api_secret}}
+
+### Test
+GET {{cloud_metrics_endpoint}}/descriptors/resources
+Authorization: Basic {{cloud_api_key}}:{{cloud_api_secret}}
+
+### Test
+GET {{cloud_metrics_endpoint}}/descriptors/metrics?resource_type=kafka
+Authorization: Basic {{cloud_api_key}}:{{cloud_api_secret}}
+

@@ -4,6 +4,8 @@
 .env
 .out
 .pytest_cache
+.plans
+.old
 **/__pycache__/
 **/*.pyc
 **/prometheus.yml

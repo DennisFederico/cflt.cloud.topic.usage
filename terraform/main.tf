@@ -13,6 +13,22 @@ locals {
   # If variables are provided, use them. Otherwise fall back to extracted values from .env.
   final_cflt_key    = var.cflt_cloud_api_key != "" ? var.cflt_cloud_api_key : local.extracted_key
   final_cflt_secret = var.cflt_cloud_api_secret != "" ? var.cflt_cloud_api_secret : local.extracted_sec
+
+  # Compute deterministic hash of application source files to detect code changes
+  app_files = [
+    for f in setunion(
+      fileset("${path.module}/..", "app/**"),
+      fileset("${path.module}/..", "docker-compose.yml")
+    ) : f
+    if !strcontains(f, ".venv") &&
+       !strcontains(f, "__pycache__") &&
+       !strcontains(f, ".DS_Store") &&
+       !strcontains(f, "app/clear")
+  ]
+
+  app_source_hash = sha256(join("", [
+    for f in local.app_files : filesha256("${path.module}/../${f}")
+  ]))
 }
 
 # Data sources for network configuration
@@ -30,12 +46,12 @@ data "google_compute_subnetwork" "subnet" {
 # Create a zip of the local files
 resource "null_resource" "build_zip" {
   triggers = {
-    always_run = timestamp()
+    app_hash = local.app_source_hash
   }
 
   provisioner "local-exec" {
     working_dir = "${path.module}/.."
-    command     = "zip -r terraform/app_deploy.zip app docker-compose.yml resources/prometheus.yml.tmpl -x \"app/.venv/*\" \"app/__pycache__/*\" \"app/.DS_Store\""
+    command     = "rm -f terraform/app_deploy.zip && zip -r terraform/app_deploy.zip app docker-compose.yml -x \"app/.venv/*\" \"app/__pycache__/*\" \"app/.DS_Store\" \"app/clear/*\" \"app/**/.venv/*\" \"app/**/__pycache__/*\" \"app/**/.DS_Store\" \"app/**/clear/*\""
   }
 }
 
@@ -55,7 +71,7 @@ resource "google_storage_bucket" "deploy_bucket" {
 
 # Upload ZIP deployment package to GCS
 resource "google_storage_bucket_object" "app_archive" {
-  name   = "app_deploy.zip"
+  name   = "app_deploy-${local.app_source_hash}.zip"
   bucket = google_storage_bucket.deploy_bucket.name
   source = "${path.module}/app_deploy.zip"
 
@@ -127,7 +143,35 @@ resource "google_compute_instance" "vm" {
     cloud_api_secret = local.final_cflt_secret
   })
 
+  lifecycle {
+    prevent_destroy = true
+    ignore_changes  = [metadata_startup_script]
+  }
+
   depends_on = [google_storage_bucket_object.app_archive]
+}
+
+# In-place redeployment on running VM without recreating the instance or wiping Prometheus data
+resource "null_resource" "redeploy_app" {
+  triggers = {
+    app_hash = local.app_source_hash
+  }
+
+  depends_on = [
+    google_storage_bucket_object.app_archive,
+    google_compute_instance.vm
+  ]
+
+  provisioner "local-exec" {
+    command = <<-EOT
+      gcloud compute ssh ${var.vm_name} --zone ${var.zone} --project ${var.project_id} --command "
+        sudo gsutil cp gs://${google_storage_bucket.deploy_bucket.name}/${google_storage_bucket_object.app_archive.name} /tmp/app_deploy.zip && \
+        sudo unzip -o /tmp/app_deploy.zip -d /opt/cflt-app && \
+        cd /opt/cflt-app && \
+        sudo docker compose up --build -d
+      "
+    EOT
+  }
 }
 
 # Firewall Rule to allow SSH traffic on port 22

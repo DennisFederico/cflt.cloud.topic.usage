@@ -897,7 +897,10 @@
           <div class="cluster-header">
             <div class="cluster-name-group">
               <h3>${escapeHtml(cluster.name || 'Unnamed Cluster')}</h3>
-              <span class="cluster-id-badge">${cid}</span>
+              <div style="display: flex; align-items: center; gap: 0.4rem; margin-top: 0.2rem;">
+                <span class="cluster-id-badge">${cid}</span>
+                <span style="font-family: monospace; font-size: 0.75rem; color: var(--text-secondary);">[T:${cluster.topics_count || 0} P:${cluster.partitions_count || 0}]</span>
+              </div>
             </div>
             <span class="badge ${isConfigured ? 'badge-configured' : 'badge-unconfigured'}">
               ${isConfigured ? 'Configured' : 'Telemetry Only'}
@@ -917,6 +920,8 @@
       // Render environment groups
       Object.keys(groups).sort().forEach(envId => {
         const group = groups[envId];
+        const envTopics = group.clusters.reduce((acc, c) => acc + (c.data.topics_count || 0), 0);
+        const envPartitions = group.clusters.reduce((acc, c) => acc + (c.data.partitions_count || 0), 0);
         const details = document.createElement("details");
         details.className = "env-group";
         details.open = false;
@@ -928,7 +933,10 @@
               <span class="env-name">${escapeHtml(group.name)}</span>
               <span class="env-id-badge">${envId}</span>
             </div>
-            <span class="env-count-badge">${group.clusters.length}</span>
+            <div style="display: flex; align-items: center; gap: 0.6rem;">
+              <span class="env-stats-badge" title="Total topics and partitions in environment" style="font-family: monospace; font-size: 0.78rem; font-weight: 600; color: var(--accent-cyan); background: rgba(0, 229, 255, 0.08); border: 1px solid rgba(0, 229, 255, 0.2); padding: 0.15rem 0.5rem; border-radius: 4px;">[T:${envTopics} P:${envPartitions}]</span>
+              <span class="env-count-badge">${group.clusters.length}</span>
+            </div>
           </summary>
           <div class="env-clusters-container" id="env-container-${envId}"></div>
         `;
@@ -942,6 +950,8 @@
 
       // Render unassigned environment group
       if (unassigned.length > 0) {
+        const unassignedTopics = unassigned.reduce((acc, c) => acc + (c.data.topics_count || 0), 0);
+        const unassignedPartitions = unassigned.reduce((acc, c) => acc + (c.data.partitions_count || 0), 0);
         const details = document.createElement("details");
         details.className = "env-group";
         details.open = false;
@@ -952,7 +962,10 @@
               <span class="env-arrow">▶</span>
               <span class="env-name">Unassigned / Telemetry Fallback</span>
             </div>
-            <span class="env-count-badge">${unassigned.length}</span>
+            <div style="display: flex; align-items: center; gap: 0.6rem;">
+              <span class="env-stats-badge" title="Total topics and partitions in environment" style="font-family: monospace; font-size: 0.78rem; font-weight: 600; color: var(--accent-cyan); background: rgba(0, 229, 255, 0.08); border: 1px solid rgba(0, 229, 255, 0.2); padding: 0.15rem 0.5rem; border-radius: 4px;">[T:${unassignedTopics} P:${unassignedPartitions}]</span>
+              <span class="env-count-badge">${unassigned.length}</span>
+            </div>
           </summary>
           <div class="env-clusters-container" id="env-container-unassigned"></div>
         `;
@@ -1056,6 +1069,7 @@
 
           <div class="drilldown-details">
             <div class="drilldown-stat">Total Topics: <span>${countTotal}</span></div>
+            <div class="drilldown-stat">Total Partitions: <span style="color: var(--accent-cyan); font-family: monospace;">${clusterUsageData.total_partitions_count !== undefined && clusterUsageData.total_partitions_count !== null ? clusterUsageData.total_partitions_count : '-'}</span></div>
             <div class="drilldown-stat">Active Topics: <span style="color: var(--accent-emerald)">${countActive}</span></div>
             <div class="drilldown-stat">Unused Topics: <span style="color: var(--accent-crimson)">${countUnused}</span></div>
             <div class="drilldown-stat">Integration: 

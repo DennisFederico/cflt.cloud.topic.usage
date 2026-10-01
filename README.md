@@ -16,10 +16,6 @@ All dynamic and hot-reloaded state folders are located inside a single hidden di
 * `.cflt-local/data/clusters_config.json`: Local cache database of Confluent Cloud clusters, environments, and configured Kafka REST API credentials.
 * `.cflt-local/prometheus/prometheus.yml`: Dynamically generated Prometheus configuration containing targets for all active clusters.
 
-Template files:
-
-* `resources/prometheus.yml.tmpl`: Prometheus config template used by the FastAPI config manager.
-
 ---
 
 ## 2. Core Architecture
@@ -82,3 +78,32 @@ In this mode, Prometheus runs in Docker while the FastAPI application runs direc
    ```
 
 5. **Open Dashboard:** Go to [http://localhost:8000](http://localhost:8000).
+
+---
+
+## 4. Cloud Deployment (GCP Compute Engine)
+
+### Fast Updates / Test Deployments
+
+Use the dedicated deployment script to bundle and redeploy in ~5 seconds without invoking Terraform:
+
+```bash
+./scripts/deploy.sh
+```
+
+This packages the application, uploads it to GCS, and updates Docker Compose on the VM in-place while keeping the `prometheus_data` volume intact.
+
+### Infrastructure & Repeatable Deployments (Terraform)
+
+Run Terraform from the `terraform/` directory:
+
+```bash
+cd terraform
+terraform apply
+```
+
+* Computes a deterministic SHA-256 hash across all application files.
+* Only triggers when code or configs change.
+* Uploads the versioned archive to GCS.
+* Connects via `gcloud compute ssh` to update the application live on the VM.
+* Protected by `lifecycle { prevent_destroy = true }` so your VM and Prometheus historical data are never destroyed.

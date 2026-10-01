@@ -96,9 +96,10 @@ class ConfigManager:
         - io.confluent.kafka.server/received_bytes
         - io.confluent.kafka.server/sent_bytes
         - io.confluent.kafka.server/retained_bytes
+        - io.confluent.kafka.server/partition_count
     metric_relabel_configs:
       - source_labels: [__name__]
-        regex: confluent_kafka_server_received_bytes|confluent_kafka_server_sent_bytes|confluent_kafka_server_retained_bytes|confluent_scrape_resource_access_error
+        regex: confluent_kafka_server_received_bytes|confluent_kafka_server_sent_bytes|confluent_kafka_server_retained_bytes|confluent_kafka_server_partition_count|confluent_scrape_resource_access_error
         action: keep"""
             jobs.append(job)
 
@@ -111,12 +112,20 @@ scrape_configs:
 {jobs_joined}
 """
 
-        # Write to path
+        # Write to path only if content has changed
         try:
             self.prom_config_path.parent.mkdir(parents=True, exist_ok=True)
+            if self.prom_config_path.exists():
+                try:
+                    with open(self.prom_config_path, "r", encoding="utf-8") as f:
+                        if f.read() == content:
+                            return True
+                except Exception:
+                    pass
+
             with open(self.prom_config_path, "w", encoding="utf-8") as f:
                 f.write(content)
-            print(f"Prometheus config written successfully to {self.prom_config_path}")
+            print(f"Prometheus config updated and written successfully to {self.prom_config_path}")
             return self.reload_prometheus()
         except Exception as e:
             print(f"Error writing Prometheus config: {e}")
