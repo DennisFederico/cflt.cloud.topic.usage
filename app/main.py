@@ -1,5 +1,6 @@
 import asyncio
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone, timedelta
 import os
 from pathlib import Path
 import re
@@ -396,11 +397,31 @@ def list_kafka_topics(endpoint: str, cluster_id: str, key: str, secret: str) -> 
             detail=f"Could not connect to Kafka REST endpoint: {str(e)}"
         )
 
+def classify_topic(bytes_in: float, bytes_out: float, retained_bytes: float) -> str:
+    """
+    Classify Kafka topic usage based on traffic metrics and storage:
+    - active: bytes_in > 0 and bytes_out > 0 (or bytes_in == 0 and bytes_out > 0 for active consumer)
+    - inactive: bytes_in > 0 and bytes_out == 0 (receiving data, but no consumers)
+    - unused: bytes_in == 0 and bytes_out == 0 and retained_bytes > 0 (dormant with stored data)
+    - empty: bytes_in == 0 and bytes_out == 0 and retained_bytes == 0 (no traffic, no data)
+    """
+    if bytes_in > 0 and bytes_out > 0:
+        return "active"
+    elif bytes_in > 0 and bytes_out == 0:
+        return "inactive"
+    elif bytes_in == 0 and bytes_out > 0:
+        return "active"  # Active consumer draining backlog
+    elif bytes_in == 0 and bytes_out == 0 and retained_bytes > 0:
+        return "unused"
+    else:
+        return "empty"
+
 @app.get("/api/clusters/{cluster_id}/usage")
 def get_cluster_usage(cluster_id: str, period: str = "30d"):
     """
     Returns the dynamic list of topics and their Prometheus traffic stats.
     Cross-references with Kafka REST API if credentials exist.
+    Classifies topics into: ACTIVE, INACTIVE, UNUSED, and EMPTY.
     """
     if not re.match(r"^\d+[smhdw]$", period):
         raise HTTPException(status_code=400, detail="Invalid period. Examples: 30d, 7d, 24h.")
@@ -413,35 +434,36 @@ def get_cluster_usage(cluster_id: str, period: str = "30d"):
     # Simulator Mode Interceptor
     if cluster_id.startswith("lkc-mock-") or cluster_id.startswith("lkc-santander-") or config_mgr.cloud_api_key == "MOCK":
         is_configured = cluster.get("configured", False)
-        inventory = ["orders-v1", "customers-v2", "payments-v1", "billing-events", "analytics-raw", "temp-debug-topic", "schema-changes"]
+        inventory = [
+            ("orders-v1", 1024 * 500, 1024 * 900, 1024 * 1200),
+            ("payments-v1", 2048 * 500, 2048 * 900, 2048 * 1200),
+            ("analytics-raw", 512 * 500, 0, 512 * 800),
+            ("clickstream-feed", 256 * 500, 0, 256 * 600),
+            ("billing-events", 0, 0, 1024 * 350),
+            ("schema-changes", 0, 0, 1024 * 150),
+            ("temp-debug-topic", 0, 0, 0),
+            ("dead-letter-queue", 0, 0, 0)
+        ]
         mock_topics = []
-        for i, topic in enumerate(inventory):
-            if topic == "temp-debug-topic" or (topic == "schema-changes" and is_configured):
-                mock_topics.append({
-                    "topic": topic,
-                    "bytes_in": 0,
-                    "bytes_out": 0,
-                    "retained_bytes": 0,
-                    "status": "unused" if is_configured else "active"
-                })
-            else:
-                bytes_in_val = (i + 1) * 1024 * 500
-                bytes_out_val = (i + 1) * 1024 * 900
-                retained_val = (i + 1) * 1024 * 1200
-                mock_topics.append({
-                    "topic": topic,
-                    "bytes_in": bytes_in_val,
-                    "bytes_out": bytes_out_val,
-                    "retained_bytes": retained_val,
-                    "status": "active"
-                })
+        for name, bin_val, bout_val, ret_val in inventory:
+            status = classify_topic(bin_val, bout_val, ret_val)
+            mock_topics.append({
+                "topic": name,
+                "bytes_in": bin_val,
+                "bytes_out": bout_val,
+                "retained_bytes": ret_val,
+                "status": status
+            })
         
         if not is_configured:
-            mock_topics = [t for t in mock_topics if t["bytes_in"] > 0]
+            # Telemetry-only: topics with active metrics or retained data
+            mock_topics = [t for t in mock_topics if t["bytes_in"] > 0 or t["bytes_out"] > 0 or t["retained_bytes"] > 0]
 
         total = len(mock_topics)
+        active = sum(1 for t in mock_topics if t["status"] == "active")
+        inactive = sum(1 for t in mock_topics if t["status"] == "inactive")
         unused = sum(1 for t in mock_topics if t["status"] == "unused")
-        active = total - unused
+        empty = sum(1 for t in mock_topics if t["status"] == "empty")
 
         return {
             "cluster_id": cluster_id,
@@ -453,7 +475,9 @@ def get_cluster_usage(cluster_id: str, period: str = "30d"):
             "configured": is_configured,
             "total_topics_count": total,
             "active_topics_count": active,
+            "inactive_topics_count": inactive,
             "unused_topics_count": unused,
+            "empty_topics_count": empty,
             "total_partitions_count": 48,
             "topics": mock_topics
         }
@@ -461,20 +485,30 @@ def get_cluster_usage(cluster_id: str, period: str = "30d"):
     # 1. Query Prometheus for bytes in, bytes out, and retained bytes
     query_in = f'sum by (topic) (sum_over_time(confluent_kafka_server_received_bytes{{cflt_cluster_id="{cluster_id}"}}[{period}]))'
     query_out = f'sum by (topic) (sum_over_time(confluent_kafka_server_sent_bytes{{cflt_cluster_id="{cluster_id}"}}[{period}]))'
-    query_retained = f'sum by (topic) (max_over_time(confluent_kafka_server_retained_bytes{{cflt_cluster_id="{cluster_id}"}}[{period}]))'
+    query_retained_period = f'sum by (topic) (max_over_time(confluent_kafka_server_retained_bytes{{cflt_cluster_id="{cluster_id}"}}[{period}]))'
+    query_retained_instant = f'sum by (topic) (confluent_kafka_server_retained_bytes{{cflt_cluster_id="{cluster_id}"}})'
     
     bytes_in = query_prom_bytes(config_mgr.prom_url, query_in)
     bytes_out = query_prom_bytes(config_mgr.prom_url, query_out)
-    bytes_retained = query_prom_bytes(config_mgr.prom_url, query_retained)
+    bytes_retained_period = query_prom_bytes(config_mgr.prom_url, query_retained_period)
+    bytes_retained_instant = query_prom_bytes(config_mgr.prom_url, query_retained_instant)
 
     # Fallback to kafka_id if we got 0 metrics
-    if not bytes_in and not bytes_out and not bytes_retained:
+    if not bytes_in and not bytes_out and not bytes_retained_period and not bytes_retained_instant:
         query_in_fb = f'sum by (topic) (sum_over_time(confluent_kafka_server_received_bytes{{kafka_id="{cluster_id}"}}[{period}]))'
         query_out_fb = f'sum by (topic) (sum_over_time(confluent_kafka_server_sent_bytes{{kafka_id="{cluster_id}"}}[{period}]))'
-        query_retained_fb = f'sum by (topic) (max_over_time(confluent_kafka_server_retained_bytes{{kafka_id="{cluster_id}"}}[{period}]))'
+        query_retained_period_fb = f'sum by (topic) (max_over_time(confluent_kafka_server_retained_bytes{{kafka_id="{cluster_id}"}}[{period}]))'
+        query_retained_instant_fb = f'sum by (topic) (confluent_kafka_server_retained_bytes{{kafka_id="{cluster_id}"}})'
         bytes_in = query_prom_bytes(config_mgr.prom_url, query_in_fb)
         bytes_out = query_prom_bytes(config_mgr.prom_url, query_out_fb)
-        bytes_retained = query_prom_bytes(config_mgr.prom_url, query_retained_fb)
+        bytes_retained_period = query_prom_bytes(config_mgr.prom_url, query_retained_period_fb)
+        bytes_retained_instant = query_prom_bytes(config_mgr.prom_url, query_retained_instant_fb)
+
+    # Combine retained bytes across period and instant query to capture any stored data
+    all_retained_topics = set(bytes_retained_period.keys()).union(set(bytes_retained_instant.keys()))
+    retained_combined = {}
+    for t in all_retained_topics:
+        retained_combined[t] = max(bytes_retained_period.get(t, 0.0), bytes_retained_instant.get(t, 0.0))
 
     # Query cluster total partitions
     query_partitions = f'confluent_kafka_server_partition_count{{cflt_cluster_id="{cluster_id}"}}'
@@ -505,35 +539,37 @@ def get_cluster_usage(cluster_id: str, period: str = "30d"):
         for topic in inventory:
             bin_val = bytes_in.get(topic, 0.0)
             bout_val = bytes_out.get(topic, 0.0)
-            bret_val = bytes_retained.get(topic, 0.0)
-            is_unused = (bin_val == 0.0) and (bout_val == 0.0)
+            bret_val = retained_combined.get(topic, 0.0)
+            status = classify_topic(bin_val, bout_val, bret_val)
             topics_list.append({
                 "topic": topic,
                 "bytes_in": int(bin_val) if bin_val.is_integer() else bin_val,
                 "bytes_out": int(bout_val) if bout_val.is_integer() else bout_val,
                 "retained_bytes": int(bret_val) if bret_val.is_integer() else bret_val,
-                "status": "unused" if is_unused else "active"
+                "status": status
             })
     else:
         # Unconfigured - return topics that have any telemetry in Prometheus
-        all_metric_topics = set(bytes_in.keys()).union(set(bytes_out.keys())).union(set(bytes_retained.keys()))
+        all_metric_topics = set(bytes_in.keys()).union(set(bytes_out.keys())).union(set(retained_combined.keys()))
         for topic in sorted(list(all_metric_topics)):
             bin_val = bytes_in.get(topic, 0.0)
             bout_val = bytes_out.get(topic, 0.0)
-            bret_val = bytes_retained.get(topic, 0.0)
-            is_unused = (bin_val == 0.0) and (bout_val == 0.0)
+            bret_val = retained_combined.get(topic, 0.0)
+            status = classify_topic(bin_val, bout_val, bret_val)
             topics_list.append({
                 "topic": topic,
                 "bytes_in": int(bin_val) if bin_val.is_integer() else bin_val,
                 "bytes_out": int(bout_val) if bout_val.is_integer() else bout_val,
                 "retained_bytes": int(bret_val) if bret_val.is_integer() else bret_val,
-                "status": "unused" if is_unused else "active"
+                "status": status
             })
 
     # Count stats
     total = len(topics_list)
+    active = sum(1 for t in topics_list if t["status"] == "active")
+    inactive = sum(1 for t in topics_list if t["status"] == "inactive")
     unused = sum(1 for t in topics_list if t["status"] == "unused")
-    active = total - unused
+    empty = sum(1 for t in topics_list if t["status"] == "empty")
 
     return {
         "cluster_id": cluster_id,
@@ -545,10 +581,25 @@ def get_cluster_usage(cluster_id: str, period: str = "30d"):
         "configured": is_configured,
         "total_topics_count": total,
         "active_topics_count": active,
+        "inactive_topics_count": inactive,
         "unused_topics_count": unused,
+        "empty_topics_count": empty,
         "total_partitions_count": total_partitions,
         "topics": topics_list
     }
+
+def period_to_timedelta(period: str) -> timedelta:
+    """Parse Prometheus period string (e.g. 30d, 7d, 24h) to datetime timedelta."""
+    match = re.match(r"^(\d+)([smhdw])$", period.strip().lower())
+    if not match:
+        return timedelta(days=30)
+    amount, unit = int(match.group(1)), match.group(2)
+    if unit == "s": return timedelta(seconds=amount)
+    if unit == "m": return timedelta(minutes=amount)
+    if unit == "h": return timedelta(hours=amount)
+    if unit == "d": return timedelta(days=amount)
+    if unit == "w": return timedelta(weeks=amount)
+    return timedelta(days=30)
 
 def to_pascal_case(name: str) -> str:
     """Convert a name string to PascalCase for clean export filenames."""
@@ -558,14 +609,17 @@ def to_pascal_case(name: str) -> str:
     return "".join(w[0].upper() + w[1:] for w in words)
 
 @app.get("/api/clusters/{cluster_id}/export-csv")
-def export_cluster_topics_csv(cluster_id: str):
+def export_cluster_topics_csv(cluster_id: str, period: str = "30d"):
     """
     Export all topics for the specified cluster as a CSV file.
-    Includes metadata comments identifying environment and cluster,
-    and columns topic_name,partitions (-1).
+    Includes metadata comments identifying environment, cluster, time window with start/end dates,
+    and status legend, with columns topic_name,partitions,status.
     Filename format: "ClusterName_clusterId.csv"
     """
-    usage = get_cluster_usage(cluster_id, period="30d")
+    if not re.match(r"^\d+[smhdw]$", period):
+        raise HTTPException(status_code=400, detail="Invalid period. Examples: 30d, 7d, 24h.")
+
+    usage = get_cluster_usage(cluster_id, period=period)
     cluster_name = usage.get("name") or f"Cluster_{cluster_id}"
     env_name = usage.get("environment_name") or usage.get("environment_id") or "Unassigned"
     env_id = usage.get("environment_id") or "unassigned"
@@ -575,21 +629,39 @@ def export_cluster_topics_csv(cluster_id: str):
     pascal_name = to_pascal_case(cluster_name)
     filename = f"{pascal_name}_{cluster_id}.csv"
 
-    # Header comments identifying environment and cluster (Option A)
+    # Calculate time window dates
+    now_utc = datetime.now(timezone.utc)
+    delta = period_to_timedelta(period)
+    start_utc = now_utc - delta
+    start_str = start_utc.strftime("%Y-%m-%d %H:%M:%S UTC")
+    end_str = now_utc.strftime("%Y-%m-%d %H:%M:%S UTC")
+    start_iso = start_utc.strftime("%Y-%m-%dT%H:%M:%SZ")
+    end_iso = now_utc.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    # Header comments identifying environment, cluster, time window with start/end date, and status definitions
     lines = [
         f"# Organization: {org_name} ({org_id})" if org_id else f"# Organization: {org_name}",
         f"# Environment: {env_name} ({env_id})" if env_id != "unassigned" else f"# Environment: {env_name}",
         f"# Cluster: {cluster_name} ({cluster_id})",
+        f"# Time Window: {period}",
+        f"# Start Date: {start_iso}",
+        f"# End Date: {end_iso}",
+        "# Status Definitions:",
+        "#   ACTIVE   : Ingress and egress observed in time window (or active consumer)",
+        "#   INACTIVE : Ingress observed, but 0 egress in time window (unconsumed data)",
+        "#   UNUSED   : No traffic in time window, but stored data retained on broker",
+        "#   EMPTY    : No traffic and 0 bytes stored",
         "",
-        "topic_name,partitions"
+        "topic_name,partitions,status"
     ]
 
     topics = usage.get("topics", [])
     for t in topics:
         topic_name = t.get("topic", "")
+        status = (t.get("status") or "empty").upper()
         if topic_name:
             escaped_topic = f'"{topic_name.replace(chr(34), chr(34)+chr(34))}"' if ("," in topic_name or '"' in topic_name) else topic_name
-            lines.append(f"{escaped_topic},-1")
+            lines.append(f"{escaped_topic},-1,{status}")
 
     csv_content = "\n".join(lines) + "\n"
 

@@ -100,6 +100,11 @@ All dynamic and hot-reloaded state folders are located inside a single hidden di
   * Quick filter pills by organization.
   * Hierarchical accordion grouping: **Organization ➔ Environments ➔ Clusters**.
   * Cluster drilldown displaying friendly Organization and Environment badges.
+  * 4-Tier Topic Classification & filtering:
+    * 🟢 **ACTIVE**: Both bytes-in and bytes-out observed in selected time window (or active consumer draining).
+    * 🟡 **INACTIVE**: Data In observed, but 0 Bytes Out in selected time window (write-only / unconsumed).
+    * 🟠 **UNUSED**: No Bytes In and No Bytes Out in selected time window, but stored data exists on broker disk (`retained_bytes > 0`).
+    * 🔴 **EMPTY**: No traffic and 0 bytes stored in topic.
   * Live Organizations Management and Scrape Rate Quotas modals.
 
 ---

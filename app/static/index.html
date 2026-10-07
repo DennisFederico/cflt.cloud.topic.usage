@@ -19,11 +19,13 @@
       
       --accent-cyan: #00e5ff;
       --accent-emerald: #00e676;
+      --accent-amber: #ffd600;
       --accent-orange: #ff9100;
       --accent-crimson: #ff1744;
       
       --neon-cyan-glow: 0 0 12px rgba(0, 229, 255, 0.3);
       --neon-emerald-glow: 0 0 12px rgba(0, 230, 118, 0.3);
+      --neon-amber-glow: 0 0 12px rgba(255, 214, 0, 0.3);
       --neon-orange-glow: 0 0 12px rgba(255, 145, 0, 0.3);
       --neon-crimson-glow: 0 0 12px rgba(255, 23, 68, 0.3);
       
@@ -373,7 +375,15 @@
       color: var(--accent-emerald);
     }
 
+    .stat-val.inactive-topics {
+      color: var(--accent-amber);
+    }
+
     .stat-val.unused-topics {
+      color: var(--accent-orange);
+    }
+
+    .stat-val.empty-topics {
       color: var(--accent-crimson);
     }
 
@@ -482,6 +492,16 @@
       background: rgba(255, 255, 255, 0.03);
       border: 1px solid var(--border-color);
       color: var(--text-secondary);
+      padding: 0.4rem 0.75rem;
+      border-radius: 6px;
+      font-size: 0.82rem;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .filter-btn:hover {
+      border-color: rgba(255, 255, 255, 0.2);
+      color: var(--text-primary);
     }
 
     .filter-btn.active {
@@ -489,6 +509,34 @@
       border-color: var(--accent-cyan);
       color: var(--accent-cyan);
       box-shadow: var(--neon-cyan-glow);
+    }
+
+    .filter-btn.filter-active.active {
+      background: rgba(0, 230, 118, 0.12);
+      border-color: var(--accent-emerald);
+      color: var(--accent-emerald);
+      box-shadow: var(--neon-emerald-glow);
+    }
+
+    .filter-btn.filter-inactive.active {
+      background: rgba(255, 214, 0, 0.12);
+      border-color: var(--accent-amber);
+      color: var(--accent-amber);
+      box-shadow: var(--neon-amber-glow);
+    }
+
+    .filter-btn.filter-unused.active {
+      background: rgba(255, 145, 0, 0.12);
+      border-color: var(--accent-orange);
+      color: var(--accent-orange);
+      box-shadow: var(--neon-orange-glow);
+    }
+
+    .filter-btn.filter-empty.active {
+      background: rgba(255, 23, 68, 0.12);
+      border-color: var(--accent-crimson);
+      color: var(--accent-crimson);
+      box-shadow: var(--neon-crimson-glow);
     }
 
     .period-select {
@@ -559,14 +607,26 @@
     }
 
     .badge-status.active {
-      background: rgba(0, 230, 118, 0.1);
-      border: 1px solid rgba(0, 230, 118, 0.2);
+      background: rgba(0, 230, 118, 0.12);
+      border: 1px solid rgba(0, 230, 118, 0.3);
       color: var(--accent-emerald);
     }
 
+    .badge-status.inactive {
+      background: rgba(255, 214, 0, 0.12);
+      border: 1px solid rgba(255, 214, 0, 0.3);
+      color: var(--accent-amber);
+    }
+
     .badge-status.unused {
-      background: rgba(255, 23, 68, 0.1);
-      border: 1px solid rgba(255, 23, 68, 0.2);
+      background: rgba(255, 145, 0, 0.12);
+      border: 1px solid rgba(255, 145, 0, 0.3);
+      color: var(--accent-orange);
+    }
+
+    .badge-status.empty {
+      background: rgba(255, 23, 68, 0.12);
+      border: 1px solid rgba(255, 23, 68, 0.3);
       color: var(--accent-crimson);
     }
 
@@ -1118,7 +1178,7 @@
     let activeOrgFilter = "all";
     let activeClusterId = null;
     let selectedPeriod = "30d";
-    let activeFilter = "all"; // all, active, unused
+    let activeFilter = "all"; // all, active, inactive, unused, empty
     let clusterUsageData = null; // Cache for current cluster details
 
     // Load clusters on startup
@@ -1428,8 +1488,10 @@
 
       const isConfigured = clusterUsageData.configured;
       const countTotal = clusterUsageData.total_topics_count;
-      const countActive = clusterUsageData.active_topics_count;
-      const countUnused = clusterUsageData.unused_topics_count;
+      const countActive = clusterUsageData.active_topics_count || 0;
+      const countInactive = clusterUsageData.inactive_topics_count || 0;
+      const countUnused = clusterUsageData.unused_topics_count || 0;
+      const countEmpty = clusterUsageData.empty_topics_count || 0;
 
       const orgDisplayName = clusterUsageData.org_name || (allClusters[clusterUsageData.cluster_id] ? allClusters[clusterUsageData.cluster_id].org_name : 'Default Organization');
       const envDisplayName = clusterUsageData.environment_name || clusterUsageData.environment_id || 'Telemetry Fallback';
@@ -1465,8 +1527,10 @@
           <div class="drilldown-details">
             <div class="drilldown-stat">Total Topics: <span>${countTotal}</span></div>
             <div class="drilldown-stat">Total Partitions: <span style="color: var(--accent-cyan); font-family: monospace;">${clusterUsageData.total_partitions_count !== undefined && clusterUsageData.total_partitions_count !== null ? clusterUsageData.total_partitions_count : '-'}</span></div>
-            <div class="drilldown-stat">Active Topics: <span style="color: var(--accent-emerald)">${countActive}</span></div>
-            <div class="drilldown-stat">Unused Topics: <span style="color: var(--accent-crimson)">${countUnused}</span></div>
+            <div class="drilldown-stat">Active: <span style="color: var(--accent-emerald); font-weight: 600;">${countActive}</span></div>
+            <div class="drilldown-stat">Inactive: <span style="color: var(--accent-amber); font-weight: 600;">${countInactive}</span></div>
+            <div class="drilldown-stat">Unused: <span style="color: var(--accent-orange); font-weight: 600;">${countUnused}</span></div>
+            <div class="drilldown-stat">Empty: <span style="color: var(--accent-crimson); font-weight: 600;">${countEmpty}</span></div>
             <div class="drilldown-stat">Integration: 
               <span class="badge ${isConfigured ? 'badge-configured' : 'badge-unconfigured'}" style="display:inline-block; margin-left:0.5rem;">
                 ${isConfigured ? 'REST API + Telemetry' : 'Telemetry Only'}
@@ -1486,9 +1550,11 @@
             <input type="text" id="topic-search" placeholder="Search topics..." oninput="filterTable()">
           </div>
           <div class="filter-options">
-            <button class="filter-btn ${activeFilter === 'all' ? 'active' : ''}" onclick="changeFilter('all')">All</button>
-            <button class="filter-btn ${activeFilter === 'active' ? 'active' : ''}" onclick="changeFilter('active')">Active</button>
-            <button class="filter-btn ${activeFilter === 'unused' ? 'active' : ''}" onclick="changeFilter('unused')">Unused</button>
+            <button class="filter-btn ${activeFilter === 'all' ? 'active' : ''}" onclick="changeFilter('all')">All (${countTotal})</button>
+            <button class="filter-btn filter-active ${activeFilter === 'active' ? 'active' : ''}" onclick="changeFilter('active')">Active (${countActive})</button>
+            <button class="filter-btn filter-inactive ${activeFilter === 'inactive' ? 'active' : ''}" onclick="changeFilter('inactive')">Inactive (${countInactive})</button>
+            <button class="filter-btn filter-unused ${activeFilter === 'unused' ? 'active' : ''}" onclick="changeFilter('unused')">Unused (${countUnused})</button>
+            <button class="filter-btn filter-empty ${activeFilter === 'empty' ? 'active' : ''}" onclick="changeFilter('empty')">Empty (${countEmpty})</button>
           </div>
         </div>
 
@@ -1521,10 +1587,10 @@
 
     function changeFilter(newFilter) {
       activeFilter = newFilter;
-      const filterBtns = document.querySelectorAll(".filter-btn");
+      const filterBtns = document.querySelectorAll(".filter-options .filter-btn");
       filterBtns.forEach(btn => {
         btn.classList.remove("active");
-        if (btn.innerText.toLowerCase() === newFilter) {
+        if (btn.getAttribute("onclick") && btn.getAttribute("onclick").includes(`'${newFilter}'`)) {
           btn.classList.add("active");
         }
       });
@@ -1547,8 +1613,7 @@
 
       let filtered = clusterUsageData.topics.filter(t => {
         if (searchVal && !t.topic.toLowerCase().includes(searchVal)) return false;
-        if (activeFilter === "active" && t.status !== "active") return false;
-        if (activeFilter === "unused" && t.status !== "unused") return false;
+        if (activeFilter !== "all" && t.status !== activeFilter) return false;
         return true;
       });
 
@@ -1563,13 +1628,19 @@
 
       filtered.forEach(t => {
         const tr = document.createElement("tr");
+        let statusTitle = "";
+        if (t.status === "active") statusTitle = "ACTIVE: Data produced & consumed (or active consumer reading data)";
+        else if (t.status === "inactive") statusTitle = "INACTIVE: Bytes In received, but no Bytes Out (no active consumers)";
+        else if (t.status === "unused") statusTitle = "UNUSED: No traffic in this window, but data retained in storage";
+        else if (t.status === "empty") statusTitle = "EMPTY: No traffic and 0 bytes stored";
+
         tr.innerHTML = `
           <td class="topic-name">${escapeHtml(t.topic)}</td>
           <td style="text-align: right; font-family: monospace;">${formatBytes(t.bytes_in)}</td>
           <td style="text-align: right; font-family: monospace;">${formatBytes(t.bytes_out)}</td>
           <td style="text-align: right; font-family: monospace;">${formatBytes(t.retained_bytes || 0)}</td>
           <td style="text-align: center;">
-            <span class="badge-status ${t.status}">${t.status}</span>
+            <span class="badge-status ${t.status}" title="${statusTitle}">${t.status}</span>
           </td>
         `;
         tbody.appendChild(tr);
@@ -1830,19 +1901,47 @@
         const pascalName = words.map(w => w.charAt(0).toUpperCase() + w.slice(1)).join('') || 'Cluster';
         const filename = `${pascalName}_${activeClusterId}.csv`;
 
+        const now = new Date();
+        let deltaMs = 30 * 24 * 60 * 60 * 1000;
+        const match = selectedPeriod.match(/^(\d+)([smhdw])$/);
+        if (match) {
+          const val = parseInt(match[1], 10);
+          const unit = match[2];
+          if (unit === 's') deltaMs = val * 1000;
+          else if (unit === 'm') deltaMs = val * 60 * 1000;
+          else if (unit === 'h') deltaMs = val * 3600 * 1000;
+          else if (unit === 'd') deltaMs = val * 86400 * 1000;
+          else if (unit === 'w') deltaMs = val * 7 * 86400 * 1000;
+        }
+        const startDate = new Date(now.getTime() - deltaMs);
+        const formatUtc = (d) => d.toISOString().replace('T', ' ').substring(0, 19) + ' UTC';
+        const startStr = formatUtc(startDate);
+        const endStr = formatUtc(now);
+        const startIso = startDate.toISOString();
+        const endIso = now.toISOString();
+
         const lines = [
           `# Organization: ${orgName}${orgId ? ` (${orgId})` : ''}`,
           `# Environment: ${envName}${envId !== 'unassigned' ? ` (${envId})` : ''}`,
           `# Cluster: ${clusterName} (${activeClusterId})`,
+          `# Time Window: ${selectedPeriod}`,
+          `# Start Date: ${startIso}`,
+          `# End Date: ${endIso}`,
+          '# Status Definitions:',
+          '#   ACTIVE   : Ingress and egress observed in time window (or active consumer)',
+          '#   INACTIVE : Ingress observed, but 0 egress in time window (unconsumed data)',
+          '#   UNUSED   : No traffic in time window, but stored data retained on broker',
+          '#   EMPTY    : No traffic and 0 bytes stored',
           '',
-          'topic_name,partitions'
+          'topic_name,partitions,status'
         ];
 
         (clusterUsageData.topics || []).forEach(t => {
           const topic = t.topic || '';
+          const status = (t.status || 'empty').toUpperCase();
           if (topic) {
             const escaped = (topic.includes(',') || topic.includes('"')) ? `"${topic.replace(/"/g, '""')}"` : topic;
-            lines.push(`${escaped},-1`);
+            lines.push(`${escaped},-1,${status}`);
           }
         });
 
@@ -1856,7 +1955,7 @@
         document.body.removeChild(a);
         setTimeout(() => URL.revokeObjectURL(url), 1000);
       } else {
-        fetch(`/api/clusters/${encodeURIComponent(activeClusterId)}/export-csv`)
+        fetch(`/api/clusters/${encodeURIComponent(activeClusterId)}/export-csv?period=${encodeURIComponent(selectedPeriod)}`)
           .then(res => {
             if (!res.ok) throw new Error("Failed to export CSV");
             const disposition = res.headers.get('Content-Disposition') || '';
