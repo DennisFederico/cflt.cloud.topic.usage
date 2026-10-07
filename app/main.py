@@ -3,18 +3,17 @@ from contextlib import asynccontextmanager
 import os
 from pathlib import Path
 import re
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 import requests
 
 from config_manager import ConfigManager
-from discovery import ClusterDiscovery
+from discovery import MultiOrgClusterDiscovery
 
 # Config
 config_mgr = ConfigManager()
-discovery = ClusterDiscovery(config_mgr.cloud_api_key, config_mgr.cloud_api_secret)
 
 # Parse interval
 interval_str = os.getenv("CLUSTER_CHECK_INTERVAL", "3h")
@@ -31,10 +30,16 @@ def parse_interval_to_seconds(val: str) -> int:
 check_interval_seconds = parse_interval_to_seconds(interval_str)
 
 async def check_and_update_clusters():
-    """Discover clusters, save new ones, and update Prometheus config."""
-    print("Running cluster discovery loop...")
+    """Discover clusters across all organizations, save new ones, and update Prometheus config."""
+    print("Running multi-org cluster discovery loop...")
     try:
-        discovered_clusters = discovery.discover_clusters()
+        orgs = config_mgr.get_organizations_list(include_secrets=True)
+        if not orgs:
+            print("Discovery skipped: No organizations configured.")
+            return
+
+        discovery = MultiOrgClusterDiscovery(orgs)
+        discovered_clusters, updated_org_names = discovery.discover_all_clusters()
         if not discovered_clusters:
             print("No clusters discovered.")
             return
@@ -42,12 +47,23 @@ async def check_and_update_clusters():
         config = config_mgr.load_clusters_config()
         if "clusters" not in config:
             config["clusters"] = {}
+        if "organizations" not in config:
+            config["organizations"] = {}
 
         changed = False
+
+        # Update discovered org display names
+        for oid, oname in updated_org_names.items():
+            if oid in config["organizations"] and config["organizations"][oid].get("name") != oname:
+                config["organizations"][oid]["name"] = oname
+                changed = True
+
         for cid, meta in discovered_clusters.items():
             if cid not in config["clusters"]:
                 config["clusters"][cid] = {
                     "name": meta.get("name") or f"Cluster {cid}",
+                    "org_id": meta.get("org_id") or "default-org",
+                    "org_name": meta.get("org_name") or "Default Organization",
                     "environment_id": meta.get("environment_id") or "",
                     "environment_name": meta.get("environment_name") or "",
                     "kafka_api_endpoint": meta.get("kafka_api_endpoint") or "",
@@ -58,12 +74,12 @@ async def check_and_update_clusters():
                 changed = True
             else:
                 cluster_entry = config["clusters"][cid]
-                # Update environment metadata if it has changed or is not set
-                for key in ["environment_id", "environment_name"]:
-                    if key in meta and cluster_entry.get(key) != meta[key]:
+                # Update organization and environment metadata if present
+                for key in ["org_id", "org_name", "environment_id", "environment_name"]:
+                    if key in meta and meta[key] and cluster_entry.get(key) != meta[key]:
                         cluster_entry[key] = meta[key]
                         changed = True
-                
+
                 # If name is default, update to display name
                 if meta.get("name") and (cluster_entry.get("name") == f"Cluster {cid}" or not cluster_entry.get("name")):
                     cluster_entry["name"] = meta["name"]
@@ -74,27 +90,24 @@ async def check_and_update_clusters():
                     cluster_entry["kafka_api_endpoint"] = meta["kafka_api_endpoint"]
                     changed = True
 
-        # Clean up config if a cluster is no longer returned (optional, but keep for consistency)
-        # We only remove it if it was never configured
+        # Clean up unconfigured clusters that are no longer returned
         for cid in list(config["clusters"].keys()):
             if cid not in discovered_clusters and not config["clusters"][cid].get("configured", False):
                 del config["clusters"][cid]
                 changed = True
 
-        discovered_cids = list(discovered_clusters.keys())
         if changed:
-            print("Cluster list changed. Saving updated clusters config...")
+            print("Cluster/Org list changed. Saving updated clusters config...")
             config_mgr.save_clusters_config(config)
 
-        # Check and ensure prometheus.yml is in sync with latest generator logic (updates only if content differs)
-        config_mgr.generate_prometheus_config(discovered_cids)
+        # Check and ensure prometheus.yml is in sync with latest generator logic
+        config_mgr.generate_prometheus_config(config["clusters"])
     except Exception as e:
         print(f"Error in check_and_update_clusters background loop: {e}")
 
 async def run_scheduler():
     """Background polling loop for cluster discovery."""
     print(f"Starting discovery scheduler with polling interval: {interval_str} ({check_interval_seconds}s)")
-    # Wait 5 seconds on startup for containers/network to stabilize
     await asyncio.sleep(5)
     while True:
         await check_and_update_clusters()
@@ -123,16 +136,97 @@ app = FastAPI(
     lifespan=lifespan
 )
 
+class OrganizationModel(BaseModel):
+    id: Optional[str] = None
+    name: str
+    api_key: str
+    api_secret: str
+
 class ClusterConfigModel(BaseModel):
     name: str
     kafka_api_endpoint: str
     kafka_api_key: str
     kafka_api_secret: str
+    org_id: Optional[str] = None
+
+@app.get("/api/organizations")
+def get_organizations():
+    """Retrieve all configured organizations with metadata and counts."""
+    config = config_mgr.load_clusters_config()
+    orgs = config_mgr.get_organizations(include_secrets=False)
+    clusters = config.get("clusters", {})
+
+    for oid, odata in orgs.items():
+        org_clusters = [c for c in clusters.values() if c.get("org_id") == oid]
+        org_envs = {c.get("environment_id") for c in org_clusters if c.get("environment_id")}
+        odata["clusters_count"] = len(org_clusters)
+        odata["environments_count"] = len(org_envs)
+
+    return list(orgs.values())
+
+@app.post("/api/organizations")
+async def create_or_update_organization(payload: OrganizationModel, background_tasks: BackgroundTasks):
+    """Add or update an organization and trigger discovery scan."""
+    saved = config_mgr.save_organization(payload.id, payload.name, payload.api_key, payload.api_secret)
+    background_tasks.add_task(check_and_update_clusters)
+    return {"status": "success", "organization": saved}
+
+@app.delete("/api/organizations/{org_id}")
+def delete_organization(org_id: str):
+    """Delete an organization and refresh Prometheus."""
+    success = config_mgr.delete_organization(org_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Organization not found.")
+    config = config_mgr.load_clusters_config()
+    config_mgr.generate_prometheus_config(config.get("clusters", {}))
+    return {"status": "success", "deleted_org_id": org_id}
+
+@app.get("/api/rate-limits")
+def get_rate_limits():
+    """
+    Returns telemetry scrape rate metrics, Confluent Cloud API quotas,
+    and explanation of origin IP vs. organization rate limits.
+    """
+    config = config_mgr.load_clusters_config()
+    clusters_count = len(config.get("clusters", {}))
+    interval = config_mgr.scrape_interval.strip().lower()
+    
+    # Calculate interval in seconds
+    interval_sec = 60
+    if interval.endswith("m"):
+        interval_sec = int(interval[:-1]) * 60
+    elif interval.endswith("s"):
+        interval_sec = int(interval[:-1])
+    elif interval.endswith("h"):
+        interval_sec = int(interval[:-1]) * 3600
+
+    requests_per_minute = round((clusters_count * 60) / max(interval_sec, 1), 2)
+    requests_per_second = round(requests_per_minute / 60, 2)
+    hourly_scrapes_per_cluster = round(3600 / max(interval_sec, 1), 1)
+
+    return {
+        "global_ip_rate_limit_per_minute": 300,
+        "global_ip_rate_limit_per_second": 5,
+        "endpoint_resource_rate_limit_per_hour": 160,
+        "configured_scrape_interval": config_mgr.scrape_interval,
+        "configured_scrape_timeout": config_mgr.scrape_timeout,
+        "total_monitored_clusters": clusters_count,
+        "current_requests_per_minute": requests_per_minute,
+        "current_requests_per_second": requests_per_second,
+        "hourly_scrapes_per_cluster": hourly_scrapes_per_cluster,
+        "limit_scope": "origin_ip",
+        "status": "warning" if requests_per_minute >= 250 else "healthy",
+        "explanation": (
+            "Confluent Cloud Metrics API (api.telemetry.confluent.cloud/v2/metrics/cloud/export) "
+            "enforces a global rate limit of 300 requests per IP address per minute (not per organization). "
+            "Because this scraper runs on a single host/VM, all scrape jobs across all organizations share "
+            "the 300 req/min origin quota. The export endpoint also enforces a limit of 160 requests per resource per hour."
+        )
+    }
 
 def resolve_cluster_name_from_prometheus(prom_url: str, cluster_id: str) -> str | None:
     """Query Prometheus series endpoint for the kafka_name label associated with the cluster ID."""
     url = f"{prom_url}/api/v1/series"
-    # Try cflt_cluster_id
     try:
         response = requests.get(url, params={"match[]": f'{{cflt_cluster_id="{cluster_id}"}}'}, timeout=5)
         if response.status_code == 200:
@@ -144,7 +238,6 @@ def resolve_cluster_name_from_prometheus(prom_url: str, cluster_id: str) -> str 
     except Exception as e:
         print(f"Error querying series by cflt_cluster_id: {e}")
 
-    # Fallback to kafka_id
     try:
         response = requests.get(url, params={"match[]": f'{{kafka_id="{cluster_id}"}}'}, timeout=5)
         if response.status_code == 200:
@@ -212,7 +305,7 @@ def get_clusters():
         cluster["topics_count"] = int(topic_map.get(cid, 0))
         
         # Mock fallback if in mock mode
-        if (cid.startswith("lkc-mock-") or config_mgr.cloud_api_key == "MOCK") and cluster["partitions_count"] == 0:
+        if (cid.startswith("lkc-mock-") or cid.startswith("lkc-santander-") or config_mgr.cloud_api_key == "MOCK") and cluster["partitions_count"] == 0:
             cluster["partitions_count"] = 24
             cluster["topics_count"] = 7
         
@@ -225,8 +318,16 @@ def configure_cluster(cluster_id: str, payload: ClusterConfigModel):
     if "clusters" not in config:
         config["clusters"] = {}
 
+    existing = config["clusters"].get(cluster_id, {})
+    org_id = payload.org_id or existing.get("org_id") or "default-org"
+    org_name = config.get("organizations", {}).get(org_id, {}).get("name", existing.get("org_name", "Default Organization"))
+
     config["clusters"][cluster_id] = {
         "name": payload.name.strip() or f"Cluster {cluster_id}",
+        "org_id": org_id,
+        "org_name": org_name,
+        "environment_id": existing.get("environment_id", ""),
+        "environment_name": existing.get("environment_name", ""),
         "kafka_api_endpoint": payload.kafka_api_endpoint.strip().rstrip("/"),
         "kafka_api_key": payload.kafka_api_key.strip(),
         "kafka_api_secret": payload.kafka_api_secret.strip(),
@@ -310,7 +411,7 @@ def get_cluster_usage(cluster_id: str, period: str = "30d"):
         raise HTTPException(status_code=404, detail="Cluster not found.")
 
     # Simulator Mode Interceptor
-    if cluster_id.startswith("lkc-mock-") or config_mgr.cloud_api_key == "MOCK":
+    if cluster_id.startswith("lkc-mock-") or cluster_id.startswith("lkc-santander-") or config_mgr.cloud_api_key == "MOCK":
         is_configured = cluster.get("configured", False)
         inventory = ["orders-v1", "customers-v2", "payments-v1", "billing-events", "analytics-raw", "temp-debug-topic", "schema-changes"]
         mock_topics = []
@@ -345,6 +446,10 @@ def get_cluster_usage(cluster_id: str, period: str = "30d"):
         return {
             "cluster_id": cluster_id,
             "name": cluster.get("name", f"Cluster {cluster_id}"),
+            "org_id": cluster.get("org_id", ""),
+            "org_name": cluster.get("org_name", ""),
+            "environment_id": cluster.get("environment_id", ""),
+            "environment_name": cluster.get("environment_name", ""),
             "configured": is_configured,
             "total_topics_count": total,
             "active_topics_count": active,
@@ -354,7 +459,6 @@ def get_cluster_usage(cluster_id: str, period: str = "30d"):
         }
 
     # 1. Query Prometheus for bytes in, bytes out, and retained bytes
-    # Try cflt_cluster_id first, then fallback to kafka_id
     query_in = f'sum by (topic) (sum_over_time(confluent_kafka_server_received_bytes{{cflt_cluster_id="{cluster_id}"}}[{period}]))'
     query_out = f'sum by (topic) (sum_over_time(confluent_kafka_server_sent_bytes{{cflt_cluster_id="{cluster_id}"}}[{period}]))'
     query_retained = f'sum by (topic) (max_over_time(confluent_kafka_server_retained_bytes{{cflt_cluster_id="{cluster_id}"}}[{period}]))'
@@ -411,7 +515,7 @@ def get_cluster_usage(cluster_id: str, period: str = "30d"):
                 "status": "unused" if is_unused else "active"
             })
     else:
-        # Unconfigured - return topics that have any telemetry in Prometheus (including retained_bytes)
+        # Unconfigured - return topics that have any telemetry in Prometheus
         all_metric_topics = set(bytes_in.keys()).union(set(bytes_out.keys())).union(set(bytes_retained.keys()))
         for topic in sorted(list(all_metric_topics)):
             bin_val = bytes_in.get(topic, 0.0)
@@ -434,6 +538,10 @@ def get_cluster_usage(cluster_id: str, period: str = "30d"):
     return {
         "cluster_id": cluster_id,
         "name": cluster.get("name", f"Cluster {cluster_id}"),
+        "org_id": cluster.get("org_id", ""),
+        "org_name": cluster.get("org_name", ""),
+        "environment_id": cluster.get("environment_id", ""),
+        "environment_name": cluster.get("environment_name", ""),
         "configured": is_configured,
         "total_topics_count": total,
         "active_topics_count": active,
