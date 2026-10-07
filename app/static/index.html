@@ -68,9 +68,10 @@
 
     /* Container */
     .app-container {
-      max-width: 1600px;
+      width: 100%;
+      min-width: 320px;
       margin: 0 auto;
-      padding: 2rem;
+      padding: 1.5rem 2rem;
     }
 
     /* Header */
@@ -174,7 +175,7 @@
     /* Main Grid Layout */
     .dashboard-grid {
       display: grid;
-      grid-template-columns: 450px 1fr;
+      grid-template-columns: clamp(460px, 25%, 600px) 1fr;
       gap: 2rem;
       align-items: start;
     }
@@ -183,35 +184,86 @@
       .dashboard-grid {
         grid-template-columns: 1fr;
       }
+      .clusters-sidebar {
+        position: static;
+      }
+      .clusters-container {
+        max-height: 500px;
+      }
     }
 
     /* Left Sidebar: Clusters List */
     .clusters-sidebar {
       display: flex;
       flex-direction: column;
-      gap: 1.5rem;
       position: sticky;
-      top: 2rem;
-      max-height: calc(100vh - 120px);
-      overflow-y: auto;
+      top: 1.5rem;
+    }
+
+    .sidebar-header {
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+      flex-shrink: 0;
+      padding-bottom: 0.75rem;
+      margin-bottom: 0.75rem;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
     }
 
     .section-title {
       font-family: var(--font-heading);
       font-size: 1.2rem;
       font-weight: 600;
-      margin-bottom: 0.5rem;
+      margin-bottom: 0.25rem;
       display: flex;
       justify-content: space-between;
       align-items: center;
+      flex-shrink: 0;
+    }
+
+    .accordion-controls {
+      display: flex;
+      gap: 0.75rem;
+      font-size: 0.82rem;
+      padding-left: 0.2rem;
+      flex-shrink: 0;
     }
 
     .clusters-container {
       display: flex;
       flex-direction: column;
       gap: 1rem;
-      flex-grow: 1;
+      max-height: calc(100vh - 270px);
+      min-height: 200px;
+      overflow-y: auto;
+      overflow-x: hidden;
       padding-right: 0.5rem;
+      padding-top: 0.25rem;
+      padding-bottom: 2rem;
+      overscroll-behavior: contain;
+      scrollbar-gutter: stable;
+      scrollbar-width: thin;
+      scrollbar-color: var(--accent-cyan) rgba(0, 0, 0, 0.3);
+    }
+
+    .clusters-container::-webkit-scrollbar {
+      width: 8px;
+    }
+
+    .clusters-container::-webkit-scrollbar-track {
+      background: rgba(0, 0, 0, 0.3);
+      border-radius: 4px;
+    }
+
+    .clusters-container::-webkit-scrollbar-thumb {
+      background: var(--accent-cyan);
+      border-radius: 4px;
+      box-shadow: 0 0 6px rgba(0, 229, 255, 0.4);
+    }
+
+    .clusters-container::-webkit-scrollbar-thumb:hover {
+      background: #ffffff;
+      box-shadow: 0 0 10px rgba(0, 229, 255, 0.9);
     }
 
     /* Glass Card styling */
@@ -226,6 +278,7 @@
       cursor: pointer;
       position: relative;
       overflow: hidden;
+      flex-shrink: 0;
     }
 
     .glass-card::before {
@@ -664,8 +717,9 @@
       background: rgba(15, 15, 28, 0.7);
       backdrop-filter: blur(14px);
       overflow: hidden;
-      transition: all 0.3s ease;
+      transition: border-color 0.3s ease, background 0.3s ease, box-shadow 0.3s ease;
       box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
+      flex-shrink: 0;
     }
 
     .org-group[open] {
@@ -750,7 +804,8 @@
       border-radius: 10px;
       background: rgba(255, 255, 255, 0.02);
       overflow: hidden;
-      transition: all 0.3s ease;
+      transition: border-color 0.3s ease, background 0.3s ease;
+      flex-shrink: 0;
     }
 
     .env-group[open] {
@@ -830,15 +885,16 @@
     /* Org filter bar */
     .org-filter-bar {
       display: flex;
-      gap: 0.5rem;
-      overflow-x: auto;
-      padding-bottom: 0.5rem;
-      margin-bottom: 0.75rem;
+      flex-wrap: wrap;
+      gap: 0.4rem;
+      flex-shrink: 0;
+      width: 100%;
+      padding: 0.1rem 0;
     }
 
     .org-filter-pill {
       font-size: 0.8rem;
-      padding: 0.35rem 0.8rem;
+      padding: 0.35rem 0.75rem;
       border-radius: 20px;
       background: rgba(255, 255, 255, 0.04);
       border: 1px solid var(--border-color);
@@ -846,6 +902,8 @@
       cursor: pointer;
       white-space: nowrap;
       transition: all 0.2s ease;
+      flex-shrink: 0;
+      user-select: none;
     }
 
     .org-filter-pill:hover {
@@ -916,21 +974,24 @@
     <div class="dashboard-grid">
       <!-- Left: Clusters -->
       <section class="clusters-sidebar">
-        <div class="section-title">
-          <h2>Discovered Clusters</h2>
-          <span id="clusters-count" style="font-size: 0.9rem; color: var(--text-secondary);">0 total</span>
+        <div class="sidebar-header">
+          <div class="section-title">
+            <h2>Discovered Clusters</h2>
+            <span id="clusters-count" style="font-size: 0.9rem; color: var(--text-secondary);">0 total</span>
+          </div>
+
+          <!-- Org Filter Bar -->
+          <div class="org-filter-bar" id="org-filter-bar">
+            <!-- Dynamically filled -->
+          </div>
+
+          <div class="accordion-controls">
+            <a href="#" onclick="expandAllGroups(event)" style="color: var(--accent-cyan); text-decoration: none;">Expand All</a>
+            <span style="color: rgba(255,255,255,0.2);">|</span>
+            <a href="#" onclick="collapseAllGroups(event)" style="color: var(--accent-cyan); text-decoration: none;">Collapse All</a>
+          </div>
         </div>
 
-        <!-- Org Filter Bar -->
-        <div class="org-filter-bar" id="org-filter-bar">
-          <!-- Dynamically filled -->
-        </div>
-
-        <div class="accordion-controls" style="margin-bottom: 0.5rem; display: flex; gap: 0.75rem; font-size: 0.85rem; padding-left: 0.2rem;">
-          <a href="#" onclick="expandAllGroups(event)" style="color: var(--accent-cyan); text-decoration: none;">Expand All</a>
-          <span style="color: rgba(255,255,255,0.2);">|</span>
-          <a href="#" onclick="collapseAllGroups(event)" style="color: var(--accent-cyan); text-decoration: none;">Collapse All</a>
-        </div>
         <div id="clusters-list" class="clusters-container">
           <!-- Dynamically filled -->
           <div class="loader-container">
