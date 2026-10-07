@@ -180,11 +180,21 @@ cd terraform
 terraform apply
 ```
 
-* Computes a deterministic SHA-256 hash across all application files.
-* Only triggers when code or configs change.
-* Uploads the versioned archive to GCS.
-* Connects via `gcloud compute ssh` to update the application live on the VM.
-* Protected by `lifecycle { prevent_destroy = true }` so your VM and Prometheus historical data are never destroyed.
+* Computes deterministic hashes across application source code and rendered configuration.
+* Automatically generates the VM's `.env` runtime file from `terraform.tfvars`.
+* Define multi-org telemetry credentials via `confluent_orgs` in `terraform/terraform.tfvars`:
+  ```hcl
+  confluent_orgs = [
+    {
+      id         = "org-santander-prod"
+      name       = "Santander Global Cards (Production)"
+      api_key    = "YOUR_PROD_API_KEY"
+      api_secret = "YOUR_PROD_API_SECRET"
+    }
+  ]
+  ```
+* If no organizations are defined in Terraform, the dashboard deploys cleanly with zero credentials, allowing you to add them dynamically via the GUI.
+* Updates live on the VM in-place via `gcloud compute ssh` without destroying historical Prometheus metrics or wiping GUI-added orgs.
 
 ### Cleaning Up Old GCS Bundles
 

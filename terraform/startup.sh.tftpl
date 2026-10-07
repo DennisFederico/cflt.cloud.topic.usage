@@ -27,16 +27,10 @@ mkdir -p /opt/cflt-app
 gsutil cp gs://${bucket_name}/${archive_name} /tmp/app_deploy.zip
 unzip -o /tmp/app_deploy.zip -d /opt/cflt-app
 
-# 4. Create environment file with Confluent Telemetry Credentials
-echo "=== Creating .env configuration ==="
-cat << 'EOF' > /opt/cflt-app/.env
-CLOUD_API_KEY=${cloud_api_key}
-CLOUD_API_SECRET=${cloud_api_secret}
-METRICS_API_ENDPOINT=https://api.telemetry.confluent.cloud/v2/metrics/cloud
-PROM_SCRAPE_INTERVAL=1m
-PROM_SCRAPE_TIMEOUT=55s
-PROM_RETENTION_TIME=180d
-EOF
+# 4. Download environment configuration from GCS
+echo "=== Downloading .env configuration from GCS ==="
+gsutil cp gs://${bucket_name}/${env_file_name} /opt/cflt-app/.env
+chmod 600 /opt/cflt-app/.env
 
 # 5. Create dynamic directories with write permissions for containers
 echo "=== Preparing dynamic volumes ==="

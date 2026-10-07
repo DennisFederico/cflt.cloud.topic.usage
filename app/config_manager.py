@@ -153,20 +153,29 @@ class ConfigManager:
         if "clusters" not in config or not isinstance(config["clusters"], dict):
             config["clusters"] = {}
 
-        # Merge environment organizations into config["organizations"]
+        # Merge or override environment organizations into config["organizations"]
         env_orgs = self._extract_env_organizations()
-        for oid, odata in env_orgs.items():
-            if oid not in config["organizations"]:
-                config["organizations"][oid] = odata
-            else:
-                # Update credentials or name if env provided non-empty values
-                existing = config["organizations"][oid]
-                if odata.get("name") and (not existing.get("name") or existing.get("name") == f"Organization {oid}"):
-                    existing["name"] = odata["name"]
-                if odata.get("api_key"):
-                    existing["api_key"] = odata["api_key"]
-                if odata.get("api_secret"):
-                    existing["api_secret"] = odata["api_secret"]
+        overwrite_gui = os.getenv("OVERWRITE_ORGS_ON_DEPLOY", "false").lower() in ("true", "1", "yes")
+
+        if overwrite_gui and env_orgs:
+            # Strict mode: If deployment provides orgs and OVERWRITE_ORGS_ON_DEPLOY is enabled,
+            # enforce deployment orgs as the sole source of truth
+            config["organizations"] = env_orgs
+        else:
+            # Default smart merge: deployment values take precedence for matching orgs,
+            # while GUI-added orgs are preserved
+            for oid, odata in env_orgs.items():
+                if oid not in config["organizations"]:
+                    config["organizations"][oid] = odata
+                else:
+                    # Update credentials or name if env provided non-empty values
+                    existing = config["organizations"][oid]
+                    if odata.get("name") and (not existing.get("name") or existing.get("name") == f"Organization {oid}"):
+                        existing["name"] = odata["name"]
+                    if odata.get("api_key"):
+                        existing["api_key"] = odata["api_key"]
+                    if odata.get("api_secret"):
+                        existing["api_secret"] = odata["api_secret"]
 
         # If clusters exist without org_id, associate them with the primary organization
         primary_org_id = next(iter(config["organizations"].keys()), "default-org")
