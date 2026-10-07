@@ -4,7 +4,7 @@ import os
 from pathlib import Path
 import re
 from typing import Any, Dict, List, Optional
-from fastapi import FastAPI, HTTPException, BackgroundTasks
+from fastapi import FastAPI, HTTPException, BackgroundTasks, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 import requests
@@ -549,6 +549,57 @@ def get_cluster_usage(cluster_id: str, period: str = "30d"):
         "total_partitions_count": total_partitions,
         "topics": topics_list
     }
+
+def to_pascal_case(name: str) -> str:
+    """Convert a name string to PascalCase for clean export filenames."""
+    words = re.findall(r"[a-zA-Z0-9]+", name or "")
+    if not words:
+        return "Cluster"
+    return "".join(w[0].upper() + w[1:] for w in words)
+
+@app.get("/api/clusters/{cluster_id}/export-csv")
+def export_cluster_topics_csv(cluster_id: str):
+    """
+    Export all topics for the specified cluster as a CSV file.
+    Includes metadata comments identifying environment and cluster,
+    and columns topic_name,partitions (-1).
+    Filename format: "ClusterName_clusterId.csv"
+    """
+    usage = get_cluster_usage(cluster_id, period="30d")
+    cluster_name = usage.get("name") or f"Cluster_{cluster_id}"
+    env_name = usage.get("environment_name") or usage.get("environment_id") or "Unassigned"
+    env_id = usage.get("environment_id") or "unassigned"
+    org_name = usage.get("org_name") or "Default Organization"
+    org_id = usage.get("org_id") or ""
+
+    pascal_name = to_pascal_case(cluster_name)
+    filename = f"{pascal_name}_{cluster_id}.csv"
+
+    # Header comments identifying environment and cluster (Option A)
+    lines = [
+        f"# Organization: {org_name} ({org_id})" if org_id else f"# Organization: {org_name}",
+        f"# Environment: {env_name} ({env_id})" if env_id != "unassigned" else f"# Environment: {env_name}",
+        f"# Cluster: {cluster_name} ({cluster_id})",
+        "",
+        "topic_name,partitions"
+    ]
+
+    topics = usage.get("topics", [])
+    for t in topics:
+        topic_name = t.get("topic", "")
+        if topic_name:
+            escaped_topic = f'"{topic_name.replace(chr(34), chr(34)+chr(34))}"' if ("," in topic_name or '"' in topic_name) else topic_name
+            lines.append(f"{escaped_topic},-1")
+
+    csv_content = "\n".join(lines) + "\n"
+
+    return Response(
+        content=csv_content,
+        media_type="text/csv; charset=utf-8",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"'
+        }
+    )
 
 # Serve static dashboard
 static_path = Path(__file__).parent / "static"

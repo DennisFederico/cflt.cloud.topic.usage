@@ -1448,7 +1448,10 @@
                 <span class="env-id-badge" style="font-size: 0.8rem; padding: 0.2rem 0.5rem; color: var(--text-primary);">🌐 Env: ${escapeHtml(envDisplayName)}</span>
               </div>
             </div>
-            <div>
+            <div style="display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap;">
+              <button class="btn-secondary" onclick="exportClusterTopicsCsv()" style="display: flex; align-items: center; gap: 0.4rem; padding: 0.45rem 0.85rem; font-size: 0.85rem;" title="Download CSV of all topics for this cluster">
+                <span>📥</span> Export CSV
+              </button>
               <select class="period-select" id="period-selector" onchange="changePeriod(this.value)">
                 <option value="1h" ${selectedPeriod === '1h' ? 'selected' : ''}>Last 1 Hour</option>
                 <option value="12h" ${selectedPeriod === '12h' ? 'selected' : ''}>Last 12 Hours</option>
@@ -1811,6 +1814,69 @@
     function collapseAllGroups(e) {
       if (e) e.preventDefault();
       document.querySelectorAll("details.org-group, details.env-group").forEach(d => d.open = false);
+    }
+
+    function exportClusterTopicsCsv() {
+      if (!activeClusterId) return;
+
+      if (clusterUsageData && clusterUsageData.cluster_id === activeClusterId) {
+        const clusterName = clusterUsageData.name || `Cluster_${activeClusterId}`;
+        const envName = clusterUsageData.environment_name || clusterUsageData.environment_id || 'Unassigned';
+        const envId = clusterUsageData.environment_id || 'unassigned';
+        const orgName = clusterUsageData.org_name || (allClusters[activeClusterId] ? allClusters[activeClusterId].org_name : 'Default Organization');
+        const orgId = clusterUsageData.org_id || '';
+
+        const words = clusterName.match(/[a-zA-Z0-9]+/g) || ['Cluster'];
+        const pascalName = words.map(w => w.charAt(0).toUpperCase() + w.slice(1)).join('') || 'Cluster';
+        const filename = `${pascalName}_${activeClusterId}.csv`;
+
+        const lines = [
+          `# Organization: ${orgName}${orgId ? ` (${orgId})` : ''}`,
+          `# Environment: ${envName}${envId !== 'unassigned' ? ` (${envId})` : ''}`,
+          `# Cluster: ${clusterName} (${activeClusterId})`,
+          '',
+          'topic_name,partitions'
+        ];
+
+        (clusterUsageData.topics || []).forEach(t => {
+          const topic = t.topic || '';
+          if (topic) {
+            const escaped = (topic.includes(',') || topic.includes('"')) ? `"${topic.replace(/"/g, '""')}"` : topic;
+            lines.push(`${escaped},-1`);
+          }
+        });
+
+        const blob = new Blob([lines.join('\n') + '\n'], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+      } else {
+        fetch(`/api/clusters/${encodeURIComponent(activeClusterId)}/export-csv`)
+          .then(res => {
+            if (!res.ok) throw new Error("Failed to export CSV");
+            const disposition = res.headers.get('Content-Disposition') || '';
+            let filename = `Cluster_${activeClusterId}.csv`;
+            const match = disposition.match(/filename="?([^"]+)"?/);
+            if (match && match[1]) filename = match[1];
+            return res.blob().then(blob => ({ blob, filename }));
+          })
+          .then(({ blob, filename }) => {
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            setTimeout(() => URL.revokeObjectURL(url), 1000);
+          })
+          .catch(err => alert("Error downloading CSV: " + err.message));
+      }
     }
   </script>
 </body>
