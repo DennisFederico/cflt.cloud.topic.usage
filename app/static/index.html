@@ -1531,6 +1531,7 @@
             <div class="drilldown-stat">Inactive: <span style="color: var(--accent-amber); font-weight: 600;">${countInactive}</span></div>
             <div class="drilldown-stat">Unused: <span style="color: var(--accent-orange); font-weight: 600;">${countUnused}</span></div>
             <div class="drilldown-stat">Empty: <span style="color: var(--accent-crimson); font-weight: 600;">${countEmpty}</span></div>
+            <div class="drilldown-stat">Window: <span style="color: var(--accent-cyan); font-family: monospace;">${selectedPeriod}${clusterUsageData.effective_period && clusterUsageData.effective_period !== selectedPeriod ? ` (Effective: ${clusterUsageData.effective_period})` : ''}</span></div>
             <div class="drilldown-stat">Integration: 
               <span class="badge ${isConfigured ? 'badge-configured' : 'badge-unconfigured'}" style="display:inline-block; margin-left:0.5rem;">
                 ${isConfigured ? 'REST API + Telemetry' : 'Telemetry Only'}
@@ -1916,15 +1917,17 @@
         const startDate = new Date(now.getTime() - deltaMs);
         const formatUtc = (d) => d.toISOString().replace('T', ' ').substring(0, 19) + ' UTC';
         const startStr = formatUtc(startDate);
-        const endStr = formatUtc(now);
-        const startIso = startDate.toISOString();
-        const endIso = now.toISOString();
+        const effectivePeriod = clusterUsageData.effective_period || selectedPeriod;
+        const effectiveLabel = effectivePeriod ? ` (Effective: ${effectivePeriod})` : '';
+        const startIso = clusterUsageData.start_date || startDate.toISOString();
+        const endIso = clusterUsageData.end_date || now.toISOString();
 
         const lines = [
           `# Organization: ${orgName}${orgId ? ` (${orgId})` : ''}`,
           `# Environment: ${envName}${envId !== 'unassigned' ? ` (${envId})` : ''}`,
           `# Cluster: ${clusterName} (${activeClusterId})`,
-          `# Time Window: ${selectedPeriod}`,
+          `# Time Window: ${selectedPeriod}${effectiveLabel}`,
+          `# Effective Window: ${effectivePeriod}`,
           `# Start Date: ${startIso}`,
           `# End Date: ${endIso}`,
           '# Status Definitions:',

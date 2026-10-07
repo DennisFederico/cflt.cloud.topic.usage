@@ -416,12 +416,92 @@ def classify_topic(bytes_in: float, bytes_out: float, retained_bytes: float) -> 
     else:
         return "empty"
 
+def period_to_timedelta(period: str) -> timedelta:
+    """Parse Prometheus period string (e.g. 30d, 7d, 24h) to datetime timedelta."""
+    match = re.match(r"^(\d+)([smhdw])$", period.strip().lower())
+    if not match:
+        return timedelta(days=30)
+    amount, unit = int(match.group(1)), match.group(2)
+    if unit == "s": return timedelta(seconds=amount)
+    if unit == "m": return timedelta(minutes=amount)
+    if unit == "h": return timedelta(hours=amount)
+    if unit == "d": return timedelta(days=amount)
+    if unit == "w": return timedelta(weeks=amount)
+    return timedelta(days=30)
+
+def format_duration(seconds: float) -> str:
+    """Format duration in seconds into clean human-readable unit (e.g. 1d, 12h, 30m, 1d 12h)."""
+    if seconds <= 0:
+        return "0s"
+    total_seconds = int(round(seconds))
+    days = total_seconds // 86400
+    rem = total_seconds % 86400
+    hours = rem // 3600
+    rem = rem % 3600
+    minutes = rem // 60
+    
+    if days > 0:
+        if hours == 0 or days >= 7:
+            return f"{days}d"
+        else:
+            return f"{days}d {hours}h"
+    elif hours > 0:
+        if minutes == 0 or hours >= 12:
+            return f"{hours}h"
+        else:
+            return f"{hours}h {minutes}m"
+    elif minutes > 0:
+        return f"{minutes}m"
+    else:
+        return f"{total_seconds}s"
+
+def query_prom_earliest_timestamp(prom_url: str, cluster_id: str, period: str) -> Optional[float]:
+    """
+    Find the earliest timestamp (in seconds) of available metric samples for this cluster within the period.
+    Uses subquery min_over_time(timestamp(...) [period:step]).
+    """
+    match = re.match(r"^(\d+)([smhdw])$", period.strip().lower())
+    amount = int(match.group(1)) if match else 30
+    unit = match.group(2) if match else "d"
+    
+    if unit in ("d", "w") and amount >= 7:
+        step = "15m"
+    elif unit in ("d", "h") and (amount >= 24 or unit == "d"):
+        step = "5m"
+    else:
+        step = "1m"
+
+    candidates = [
+        f'min(min_over_time(timestamp(confluent_kafka_server_partition_count{{cflt_cluster_id="{cluster_id}"}})[{period}:{step}]))',
+        f'min(min_over_time(timestamp(confluent_kafka_server_retained_bytes{{cflt_cluster_id="{cluster_id}"}})[{period}:{step}]))',
+        f'min(min_over_time(timestamp(confluent_kafka_server_received_bytes{{cflt_cluster_id="{cluster_id}"}})[{period}:{step}]))',
+        f'min(min_over_time(timestamp(confluent_kafka_server_partition_count{{kafka_id="{cluster_id}"}})[{period}:{step}]))',
+        f'min(min_over_time(timestamp(confluent_kafka_server_retained_bytes{{kafka_id="{cluster_id}"}})[{period}:{step}]))',
+    ]
+
+    for q in candidates:
+        try:
+            resp = requests.get(f"{prom_url}/api/v1/query", params={"query": q}, timeout=5)
+            if resp.status_code == 200:
+                data = resp.json()
+                if data.get("status") == "success":
+                    results = data.get("data", {}).get("result", [])
+                    if results and isinstance(results[0].get("value"), list):
+                        val_str = results[0]["value"][1]
+                        val = float(val_str)
+                        if val > 0:
+                            return val
+        except Exception:
+            continue
+    return None
+
 @app.get("/api/clusters/{cluster_id}/usage")
 def get_cluster_usage(cluster_id: str, period: str = "30d"):
     """
     Returns the dynamic list of topics and their Prometheus traffic stats.
     Cross-references with Kafka REST API if credentials exist.
     Classifies topics into: ACTIVE, INACTIVE, UNUSED, and EMPTY.
+    Calculates effective time window based on available metric history.
     """
     if not re.match(r"^\d+[smhdw]$", period):
         raise HTTPException(status_code=400, detail="Invalid period. Examples: 30d, 7d, 24h.")
@@ -431,9 +511,23 @@ def get_cluster_usage(cluster_id: str, period: str = "30d"):
     if not cluster:
         raise HTTPException(status_code=404, detail="Cluster not found.")
 
+    now_utc = datetime.now(timezone.utc)
+    requested_delta = period_to_timedelta(period)
+    requested_start = now_utc - requested_delta
+
     # Simulator Mode Interceptor
     if cluster_id.startswith("lkc-mock-") or cluster_id.startswith("lkc-santander-") or config_mgr.cloud_api_key == "MOCK":
         is_configured = cluster.get("configured", False)
+        # Simulate effective window of 1 day if requested period >= 1d
+        if requested_delta >= timedelta(days=1):
+            effective_start = now_utc - timedelta(days=1)
+        else:
+            effective_start = requested_start
+        effective_seconds = (now_utc - effective_start).total_seconds()
+        effective_period = format_duration(effective_seconds)
+        start_iso = effective_start.strftime("%Y-%m-%dT%H:%M:%SZ")
+        end_iso = now_utc.strftime("%Y-%m-%dT%H:%M:%SZ")
+
         inventory = [
             ("orders-v1", 1024 * 500, 1024 * 900, 1024 * 1200),
             ("payments-v1", 2048 * 500, 2048 * 900, 2048 * 1200),
@@ -473,6 +567,10 @@ def get_cluster_usage(cluster_id: str, period: str = "30d"):
             "environment_id": cluster.get("environment_id", ""),
             "environment_name": cluster.get("environment_name", ""),
             "configured": is_configured,
+            "period": period,
+            "effective_period": effective_period,
+            "start_date": start_iso,
+            "end_date": end_iso,
             "total_topics_count": total,
             "active_topics_count": active,
             "inactive_topics_count": inactive,
@@ -481,6 +579,19 @@ def get_cluster_usage(cluster_id: str, period: str = "30d"):
             "total_partitions_count": 48,
             "topics": mock_topics
         }
+
+    # Query earliest metric timestamp to establish effective time window
+    earliest_ts = query_prom_earliest_timestamp(config_mgr.prom_url, cluster_id, period)
+    if earliest_ts is not None:
+        earliest_dt = datetime.fromtimestamp(earliest_ts, timezone.utc)
+        effective_start = max(requested_start, earliest_dt)
+    else:
+        effective_start = requested_start
+
+    effective_seconds = (now_utc - effective_start).total_seconds()
+    effective_period = format_duration(effective_seconds)
+    start_iso = effective_start.strftime("%Y-%m-%dT%H:%M:%SZ")
+    end_iso = now_utc.strftime("%Y-%m-%dT%H:%M:%SZ")
 
     # 1. Query Prometheus for bytes in, bytes out, and retained bytes
     query_in = f'sum by (topic) (sum_over_time(confluent_kafka_server_received_bytes{{cflt_cluster_id="{cluster_id}"}}[{period}]))'
@@ -579,6 +690,10 @@ def get_cluster_usage(cluster_id: str, period: str = "30d"):
         "environment_id": cluster.get("environment_id", ""),
         "environment_name": cluster.get("environment_name", ""),
         "configured": is_configured,
+        "period": period,
+        "effective_period": effective_period,
+        "start_date": start_iso,
+        "end_date": end_iso,
         "total_topics_count": total,
         "active_topics_count": active,
         "inactive_topics_count": inactive,
@@ -587,19 +702,6 @@ def get_cluster_usage(cluster_id: str, period: str = "30d"):
         "total_partitions_count": total_partitions,
         "topics": topics_list
     }
-
-def period_to_timedelta(period: str) -> timedelta:
-    """Parse Prometheus period string (e.g. 30d, 7d, 24h) to datetime timedelta."""
-    match = re.match(r"^(\d+)([smhdw])$", period.strip().lower())
-    if not match:
-        return timedelta(days=30)
-    amount, unit = int(match.group(1)), match.group(2)
-    if unit == "s": return timedelta(seconds=amount)
-    if unit == "m": return timedelta(minutes=amount)
-    if unit == "h": return timedelta(hours=amount)
-    if unit == "d": return timedelta(days=amount)
-    if unit == "w": return timedelta(weeks=amount)
-    return timedelta(days=30)
 
 def to_pascal_case(name: str) -> str:
     """Convert a name string to PascalCase for clean export filenames."""
@@ -625,25 +727,22 @@ def export_cluster_topics_csv(cluster_id: str, period: str = "30d"):
     env_id = usage.get("environment_id") or "unassigned"
     org_name = usage.get("org_name") or "Default Organization"
     org_id = usage.get("org_id") or ""
+    effective_period = usage.get("effective_period") or period
+    start_iso = usage.get("start_date") or ""
+    end_iso = usage.get("end_date") or ""
 
     pascal_name = to_pascal_case(cluster_name)
     filename = f"{pascal_name}_{cluster_id}.csv"
 
-    # Calculate time window dates
-    now_utc = datetime.now(timezone.utc)
-    delta = period_to_timedelta(period)
-    start_utc = now_utc - delta
-    start_str = start_utc.strftime("%Y-%m-%d %H:%M:%S UTC")
-    end_str = now_utc.strftime("%Y-%m-%d %H:%M:%S UTC")
-    start_iso = start_utc.strftime("%Y-%m-%dT%H:%M:%SZ")
-    end_iso = now_utc.strftime("%Y-%m-%dT%H:%M:%SZ")
+    effective_label = f" (Effective: {effective_period})" if effective_period else ""
 
     # Header comments identifying environment, cluster, time window with start/end date, and status definitions
     lines = [
         f"# Organization: {org_name} ({org_id})" if org_id else f"# Organization: {org_name}",
         f"# Environment: {env_name} ({env_id})" if env_id != "unassigned" else f"# Environment: {env_name}",
         f"# Cluster: {cluster_name} ({cluster_id})",
-        f"# Time Window: {period}",
+        f"# Time Window: {period}{effective_label}",
+        f"# Effective Window: {effective_period}",
         f"# Start Date: {start_iso}",
         f"# End Date: {end_iso}",
         "# Status Definitions:",
