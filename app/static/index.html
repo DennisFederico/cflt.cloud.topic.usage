@@ -1922,6 +1922,17 @@
         const startIso = clusterUsageData.start_date || startDate.toISOString();
         const endIso = clusterUsageData.end_date || now.toISOString();
 
+        const totalTopics = clusterUsageData.total_topics_count !== undefined && clusterUsageData.total_topics_count !== null
+          ? clusterUsageData.total_topics_count
+          : (clusterUsageData.topics || []).length;
+        const totalPartitions = clusterUsageData.total_partitions_count !== undefined && clusterUsageData.total_partitions_count !== null
+          ? clusterUsageData.total_partitions_count
+          : '-';
+        const activeTopics = clusterUsageData.active_topics_count || 0;
+        const inactiveTopics = clusterUsageData.inactive_topics_count || 0;
+        const unusedTopics = clusterUsageData.unused_topics_count || 0;
+        const emptyTopics = clusterUsageData.empty_topics_count || 0;
+
         const lines = [
           `# Organization: ${orgName}${orgId ? ` (${orgId})` : ''}`,
           `# Environment: ${envName}${envId !== 'unassigned' ? ` (${envId})` : ''}`,
@@ -1930,6 +1941,11 @@
           `# Effective Window: ${effectivePeriod}`,
           `# Start Date: ${startIso}`,
           `# End Date: ${endIso}`,
+          `# Total Topics: ${totalTopics} (Partitions: ${totalPartitions})`,
+          `# Active Topics: ${activeTopics}`,
+          `# Inactive Topics: ${inactiveTopics}`,
+          `# Unused Topics: ${unusedTopics}`,
+          `# Empty Topics: ${emptyTopics}`,
           '# Status Definitions:',
           '#   ACTIVE   : Ingress and egress observed in time window (or active consumer)',
           '#   INACTIVE : Ingress observed, but 0 egress in time window (unconsumed data)',

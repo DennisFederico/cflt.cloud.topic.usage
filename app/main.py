@@ -736,7 +736,15 @@ def export_cluster_topics_csv(cluster_id: str, period: str = "30d"):
 
     effective_label = f" (Effective: {effective_period})" if effective_period else ""
 
-    # Header comments identifying environment, cluster, time window with start/end date, and status definitions
+    total_topics = usage.get("total_topics_count", len(usage.get("topics", [])))
+    total_partitions = usage.get("total_partitions_count")
+    partitions_str = str(total_partitions) if total_partitions is not None else "-"
+    active_topics = usage.get("active_topics_count", 0)
+    inactive_topics = usage.get("inactive_topics_count", 0)
+    unused_topics = usage.get("unused_topics_count", 0)
+    empty_topics = usage.get("empty_topics_count", 0)
+
+    # Header comments identifying environment, cluster, time window with start/end date, topics summary, and status definitions
     lines = [
         f"# Organization: {org_name} ({org_id})" if org_id else f"# Organization: {org_name}",
         f"# Environment: {env_name} ({env_id})" if env_id != "unassigned" else f"# Environment: {env_name}",
@@ -745,6 +753,11 @@ def export_cluster_topics_csv(cluster_id: str, period: str = "30d"):
         f"# Effective Window: {effective_period}",
         f"# Start Date: {start_iso}",
         f"# End Date: {end_iso}",
+        f"# Total Topics: {total_topics} (Partitions: {partitions_str})",
+        f"# Active Topics: {active_topics}",
+        f"# Inactive Topics: {inactive_topics}",
+        f"# Unused Topics: {unused_topics}",
+        f"# Empty Topics: {empty_topics}",
         "# Status Definitions:",
         "#   ACTIVE   : Ingress and egress observed in time window (or active consumer)",
         "#   INACTIVE : Ingress observed, but 0 egress in time window (unconsumed data)",
