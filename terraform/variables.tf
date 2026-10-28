@@ -98,3 +98,15 @@ variable "allowed_ssh_cidr_ranges" {
   type        = list(string)
   description = "List of CIDR ranges allowed to SSH into the VM"
 }
+
+variable "boot_disk_size_gb" {
+  type        = number
+  description = "Boot disk size in GB (holds the Prometheus TSDB volume). Can only grow."
+  default     = 100
+}
+
+variable "static_ip_name" {
+  type        = string
+  description = "Name of the reserved static external IP for the dashboard VM"
+  default     = "cflt-dashboard-ip"
+}

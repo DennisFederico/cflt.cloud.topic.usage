@@ -134,6 +134,13 @@ resource "google_compute_firewall" "allow_http_8000" {
   target_tags   = [var.vm_name]
 }
 
+# Static external IP for the dashboard (survives VM stop/start)
+resource "google_compute_address" "dashboard_ip" {
+  name    = var.static_ip_name
+  region  = var.region
+  project = var.project_id
+}
+
 # Compute Engine Instance
 resource "google_compute_instance" "vm" {
   name         = var.vm_name
@@ -141,19 +148,22 @@ resource "google_compute_instance" "vm" {
   zone         = var.zone
   project      = var.project_id
 
+  # Allow machine_type changes in place (stop/start) instead of failing
+  allow_stopping_for_update = true
+
   tags = [var.vm_name]
 
   boot_disk {
     initialize_params {
       image = "debian-cloud/debian-12"
-      size  = 20
+      size  = var.boot_disk_size_gb
     }
   }
 
   network_interface {
     subnetwork = data.google_compute_subnetwork.subnet.self_link
     access_config {
-      // Ephemeral public IP to allow dashboard access
+      nat_ip = google_compute_address.dashboard_ip.address
     }
   }
 
